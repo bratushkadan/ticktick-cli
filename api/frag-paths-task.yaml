@@ -1,0 +1,400 @@
+paths:
+  /open/v1/preference:
+    post:
+      tags:
+        - Preference
+      operationId: GetUserPreferences
+      summary: Get user preferences
+      description: Returns the current user's preferences, including the IANA time zone.
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Preference'
+  /open/v1/project/{projectId}/task/{taskId}:
+    get:
+      tags:
+        - Task
+      operationId: GetTask
+      summary: Get task by project ID and task ID
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: taskId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+    delete:
+      tags:
+        - Task
+      operationId: DeleteTask
+      summary: Delete task
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: taskId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+  /open/v1/project/{projectId}/task/{taskId}/complete:
+    post:
+      tags:
+        - Task
+      operationId: CompleteTask
+      summary: Complete task
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: taskId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+  /open/v1/project/{projectId}/task/{taskId}/comments:
+    get:
+      tags:
+        - Task
+      operationId: GetTaskComments
+      summary: Get task comments
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: taskId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/OpenComment'
+  /open/v1/project/{projectId}/task/{taskId}/comment:
+    post:
+      tags:
+        - Task
+      operationId: AddTaskComment
+      summary: Add task comment
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: taskId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CommentCreateRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenComment'
+  /open/v1/project/{projectId}/task/{taskId}/comment/{id}:
+    delete:
+      tags:
+        - Task
+      operationId: DeleteTaskComment
+      summary: Delete task comment
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: taskId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: id
+          in: path
+          required: true
+          description: Comment identifier
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+  /open/v1/task:
+    post:
+      tags:
+        - Task
+      operationId: CreateTask
+      summary: Create task
+      description: Creates a task. title and projectId are required.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskCreateRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+  /open/v1/task/{taskId}:
+    post:
+      tags:
+        - Task
+      operationId: UpdateTask
+      summary: Update task
+      description: Updates a task. id and projectId are required in the body.
+      parameters:
+        - name: taskId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskUpdateRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+  /open/v1/task/completeTasks:
+    post:
+      tags:
+        - Task
+      operationId: CompleteTasks
+      summary: Complete multiple tasks
+      description: Completes up to 50 tasks in one project. Only the first 50 task IDs are processed; if projectId is omitted or empty, the current user's inbox is used.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CompleteTasksRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: string
+  /open/v1/task/move:
+    post:
+      tags:
+        - Task
+      operationId: MoveTasks
+      summary: Move tasks between projects
+      description: Moves one or more tasks between projects. Accepts a JSON array of move operations.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/TaskMove'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/MoveTaskResult'
+  /open/v1/task/batch:
+    post:
+      tags:
+        - Task
+      operationId: BatchTasks
+      summary: Batch create or update tasks
+      description: Creates and updates tasks in a single request. Each add and update array supports up to 50 tasks.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskBatchRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TaskBatchResult'
+  /open/v1/task/assign:
+    post:
+      tags:
+        - Task
+      operationId: AssignTask
+      summary: Assign task
+      description: Assigns a task to a member of its project.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskAssignRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+  /open/v1/task/unassign:
+    post:
+      tags:
+        - Task
+      operationId: UnassignTask
+      summary: Unassign task
+      description: Removes the assignee from a task.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskUnassignRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Task'
+  /open/v1/task/completed:
+    post:
+      tags:
+        - Task
+      operationId: ListCompletedTasks
+      summary: List completed tasks
+      description: Retrieves at most 200 tasks marked as completed within specific projects and a given completedTime range (startDate inclusive, endDate inclusive).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CompletedTasksFilter'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Task'
+  /open/v1/task/filter:
+    post:
+      tags:
+        - Task
+      operationId: FilterTasks
+      summary: Filter tasks
+      description: Retrieves at most 200 tasks based on advanced filtering criteria, including project scope, date ranges, priority levels, tags, task kinds, and status.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskFilter'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Task'
+  /open/v1/task/undone:
+    post:
+      tags:
+        - Task
+      operationId: ListUndoneTasks
+      summary: List undone tasks
+      description: Retrieves undone tasks within a date range of up to 14 days. startDate and endDate are required; an invalid range returns an empty array.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UndoneTasksFilter'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Task'
+  /open/v1/task/search:
+    post:
+      tags:
+        - Task
+      operationId: SearchTasks
+      summary: Search tasks
+      description: Searches tasks by keywords and optional project, tag, status, and due-date filters. A supplied keywords value must not be blank; a blank value returns an empty array.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TaskSearchFilter'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Task'

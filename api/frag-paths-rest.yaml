@@ -1,0 +1,636 @@
+paths:
+  /open/v1/project:
+    get:
+      tags:
+        - Project
+      summary: List projects
+      description: Returns the user's projects. Both pagination parameters are optional; when either one is provided, omitted or negative values default to offset 0 and limit 200.
+      operationId: ListProjects
+      parameters:
+        - name: offset
+          in: query
+          required: false
+          description: Zero-based result offset. When either pagination parameter is provided, omitted or negative values default to 0.
+          schema:
+            type: integer
+            format: int32
+        - name: limit
+          in: query
+          required: false
+          description: Maximum number of projects to return. When either pagination parameter is provided, omitted or negative values default to 200.
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Project'
+    post:
+      tags:
+        - Project
+      summary: Create a project
+      description: Creates a new project and returns it.
+      operationId: CreateProject
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectCreateRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+  /open/v1/project/{projectId}:
+    get:
+      tags:
+        - Project
+      summary: Get a project by ID
+      operationId: GetProject
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          description: Project identifier
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+    post:
+      tags:
+        - Project
+      summary: Update a project
+      description: Updates the given project and returns the updated project.
+      operationId: UpdateProject
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          description: Project identifier
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectUpdateRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+    delete:
+      tags:
+        - Project
+      summary: Delete a project
+      operationId: DeleteProject
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          description: Project identifier
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+  /open/v1/project/{projectId}/data:
+    get:
+      tags:
+        - Project
+      summary: Get a project with its data
+      description: Returns the project together with its undone tasks and columns.
+      operationId: GetProjectData
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          description: Project identifier
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectData'
+  /open/v1/project/{projectId}/members:
+    get:
+      tags:
+        - Project
+      summary: Get project members
+      description: Returns the members of a project.
+      operationId: GetProjectMembers
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          description: Project identifier
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ProjectMember'
+  /open/v1/project/group:
+    get:
+      tags:
+        - ProjectGroup
+      summary: List project groups
+      operationId: ListProjectGroups
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/OpenProjectGroup'
+    post:
+      tags:
+        - ProjectGroup
+      summary: Create a project group
+      description: Creates a project group. The name is required and limited to 64 characters.
+      operationId: CreateProjectGroup
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectGroupCreateRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenProjectGroup'
+  /open/v1/project/group/{projectGroupId}:
+    post:
+      tags:
+        - ProjectGroup
+      summary: Update a project group
+      description: Updates the given project group. The name is limited to 64 characters.
+      operationId: UpdateProjectGroup
+      parameters:
+        - name: projectGroupId
+          in: path
+          required: true
+          description: Project group identifier
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectGroupUpdateRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenProjectGroup'
+    delete:
+      tags:
+        - ProjectGroup
+      summary: Delete a project group
+      operationId: DeleteProjectGroup
+      parameters:
+        - name: projectGroupId
+          in: path
+          required: true
+          description: Project group identifier
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+  /open/v1/project/{projectId}/column:
+    get:
+      tags:
+        - Column
+      summary: List columns of a project
+      operationId: ListColumns
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          description: Project identifier
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Column'
+    post:
+      tags:
+        - Column
+      summary: Create a column
+      description: Creates a column in the project. The name is required and limited to 1000 characters.
+      operationId: CreateColumn
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          description: Project identifier
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ColumnCreateRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Column'
+  /open/v1/project/{projectId}/column/{columnId}:
+    post:
+      tags:
+        - Column
+      summary: Update a column
+      description: Updates the given column. The name is limited to 1000 characters.
+      operationId: UpdateColumn
+      parameters:
+        - name: projectId
+          in: path
+          required: true
+          description: Project identifier
+          schema:
+            type: string
+        - name: columnId
+          in: path
+          required: true
+          description: Column identifier
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ColumnUpdateRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Column'
+  /open/v1/tag:
+    get:
+      tags:
+        - Tag
+      summary: List tags
+      operationId: ListTags
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/OpenTag'
+    post:
+      tags:
+        - Tag
+      summary: Create a tag
+      description: Creates a tag. Both name and label are limited to 64 characters; name must be lowercase and trimmed, and label must match name when lowercased.
+      operationId: CreateTag
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TagCreateRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenTag'
+  /open/v1/focus/{focusId}:
+    get:
+      tags:
+        - Focus
+      summary: Get a focus by ID
+      description: Returns a single focus record. The required type query parameter selects the focus kind (Pomodoro 0, Timing 1).
+      operationId: GetFocus
+      parameters:
+        - name: focusId
+          in: path
+          required: true
+          description: Focus identifier
+          schema:
+            type: string
+        - name: type
+          in: query
+          required: true
+          description: 'Focus type: Pomodoro = 0, Timing = 1.'
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenFocus'
+    delete:
+      tags:
+        - Focus
+      summary: Delete a focus
+      description: Deletes a focus record. The required type query parameter selects the focus kind (Pomodoro 0, Timing 1).
+      operationId: DeleteFocus
+      parameters:
+        - name: focusId
+          in: path
+          required: true
+          description: Focus identifier
+          schema:
+            type: string
+        - name: type
+          in: query
+          required: true
+          description: 'Focus type: Pomodoro = 0, Timing = 1.'
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenFocus'
+  /open/v1/focus:
+    get:
+      tags:
+        - Focus
+      summary: List focuses by time range
+      description: Returns focus records within the given time range. If the range exceeds 30 days, the server automatically adjusts the start time to 30 days before `to`.
+      operationId: ListFocuses
+      parameters:
+        - name: from
+          in: query
+          required: true
+          description: Range start time.
+          schema:
+            type: string
+            format: "yyyy-MM-dd'T'HH:mm:ssZ"
+            example: '2026-04-01T00:00:00+0800'
+        - name: to
+          in: query
+          required: true
+          description: Range end time.
+          schema:
+            type: string
+            format: "yyyy-MM-dd'T'HH:mm:ssZ"
+            example: '2026-04-02T00:00:00+0800'
+        - name: type
+          in: query
+          required: true
+          description: 'Focus type: Pomodoro = 0, Timing = 1.'
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/OpenFocus'
+    post:
+      tags:
+        - Focus
+      summary: Create a focus
+      description: Creates a focus record and returns it.
+      operationId: CreateFocus
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FocusCreateRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenFocus'
+  /open/v1/countdown:
+    get:
+      tags:
+        - Countdown
+      summary: List countdowns
+      operationId: ListCountdowns
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/OpenCountdown'
+  /open/v1/habit:
+    get:
+      tags:
+        - Habit
+      summary: List habits
+      operationId: ListHabits
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/OpenHabit'
+    post:
+      tags:
+        - Habit
+      summary: Create a habit
+      description: Creates a habit. The name is required and limited to 1000 characters.
+      operationId: CreateHabit
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HabitCreateRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenHabit'
+  /open/v1/habit/sections:
+    get:
+      tags:
+        - Habit
+      summary: List habit sections
+      description: Returns the current user's habit sections.
+      operationId: ListHabitSections
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/OpenHabitSection'
+  /open/v1/habit/checkins:
+    get:
+      tags:
+        - Habit
+      summary: List habit check-ins
+      description: Returns check-ins for the given habits within the date range. Dates use the YYYYMMDD integer stamp format.
+      operationId: ListHabitCheckins
+      parameters:
+        - name: habitIds
+          in: query
+          required: true
+          description: Habit identifiers separated by commas, e.g. habit-1,habit-2.
+          schema:
+            type: string
+        - name: from
+          in: query
+          required: true
+          description: Start date stamp in YYYYMMDD format.
+          schema:
+            type: integer
+            format: int32
+        - name: to
+          in: query
+          required: true
+          description: End date stamp in YYYYMMDD format.
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/OpenHabitCheckin'
+  /open/v1/habit/{habitId}:
+    get:
+      tags:
+        - Habit
+      summary: Get a habit by ID
+      operationId: GetHabit
+      parameters:
+        - name: habitId
+          in: path
+          required: true
+          description: Habit identifier
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenHabit'
+    post:
+      tags:
+        - Habit
+      summary: Update a habit
+      description: Updates the given habit. An empty name is treated as null; the maximum length is 1000 characters.
+      operationId: UpdateHabit
+      parameters:
+        - name: habitId
+          in: path
+          required: true
+          description: Habit identifier
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HabitUpdateRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenHabit'
+  /open/v1/habit/{habitId}/checkin:
+    post:
+      tags:
+        - Habit
+      summary: Create or update a habit check-in
+      description: Creates or updates the check-in for the given habit. The stamp is required and uses the YYYYMMDD integer format.
+      operationId: CheckinHabit
+      parameters:
+        - name: habitId
+          in: path
+          required: true
+          description: Habit identifier
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/HabitCheckinRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenHabitCheckin'
