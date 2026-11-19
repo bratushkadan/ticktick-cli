@@ -1,0 +1,19 @@
+# Binaries
+/ticktick
+/bin/
+/dist/
+
+# Secrets — never commit tokens
+.env
+*.token
+token
+
+# Go
+*.test
+*.out
+coverage.*
+
+# OS/editor
+.DS_Store
+.idea/
+.vscode/
