@@ -12,9 +12,8 @@ import (
 	"ticktick-cli/api"
 )
 
-// Response payloads copied from docs/openapi.md (List Completed Tasks and
-// Filter Tasks examples); the filter task is reused for undone/search, whose
-// docs show no response example.
+// Response payloads based on docs/openapi.md. The filter fixture includes
+// numeric completion times and is also reused for undone/search.
 const taskQueryCompletedJSON = `[
   {
     "id": "69a850f8b9061f374d54a046",
@@ -46,6 +45,13 @@ const taskQueryFilterJSON = `[
     "isAllDay": false,
     "priority": 0,
     "status": 0,
+    "completedTime": 1577934306000,
+    "items": [
+      {"id": "item-1", "status": 1, "completedTime": 1577934245000},
+      {"id": "item-2", "status": 1, "completedTime": "2020-01-02T03:04:05+0000"},
+      {"id": "item-3", "status": 0, "completedTime": null},
+      {"id": "item-4", "status": 0}
+    ],
     "tags": [
       "tag"
     ],
@@ -168,6 +174,9 @@ func TestTaskQueryFilterJSON(t *testing.T) {
 	}
 	if !strings.Contains(out, "69a85785b9061f3c217e9de6") {
 		t.Errorf("--json output missing task id:\n%s", out)
+	}
+	if !strings.Contains(out, `"completedTime": 1577934245000`) {
+		t.Errorf("--json output missing numeric checklist completion time:\n%s", out)
 	}
 }
 

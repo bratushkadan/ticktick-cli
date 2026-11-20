@@ -117,8 +117,8 @@ const (
 
 // ChecklistItem A subtask (checklist item) of a Task.
 type ChecklistItem struct {
-	// CompletedTime Subtask completed time in "yyyy-MM-dd'T'HH:mm:ssZ" format, e.g. "2019-11-13T03:00:00+0000".
-	CompletedTime *string `json:"completedTime,omitempty"`
+	// CompletedTime Completion time as a TickTick date-time string or Unix epoch milliseconds.
+	CompletedTime *TaskCompletionTime `json:"completedTime,omitempty"`
 
 	// Id Subtask identifier.
 	Id *string `json:"id,omitempty"`
@@ -918,8 +918,8 @@ type Task struct {
 	// AssigneeUsername Username of the project member assigned to the task.
 	AssigneeUsername *string `json:"assigneeUsername,omitempty"`
 
-	// CompletedTime Task completed time in "yyyy-MM-dd'T'HH:mm:ssZ" format, e.g. "2019-11-13T03:00:00+0000".
-	CompletedTime *string `json:"completedTime,omitempty"`
+	// CompletedTime Completion time as a TickTick date-time string or Unix epoch milliseconds.
+	CompletedTime *TaskCompletionTime `json:"completedTime,omitempty"`
 
 	// Content Task content.
 	Content *string `json:"content,omitempty"`
@@ -1056,6 +1056,17 @@ type TaskBatchResult struct {
 	// Status Overall batch status (live field), e.g. "complete" or "partial".
 	Status *string `json:"status,omitempty"`
 }
+
+// TaskCompletionTime Completion time as a TickTick date-time string or Unix epoch milliseconds.
+type TaskCompletionTime struct {
+	union json.RawMessage
+}
+
+// TaskCompletionTime0 defines model for .
+type TaskCompletionTime0 = string
+
+// TaskCompletionTime1 defines model for .
+type TaskCompletionTime1 = int64
 
 // TaskCreateRequest Request body for creating a task. parentId and kind are extensions of the documented request table, taken from the Task definition.
 type TaskCreateRequest struct {
@@ -1377,6 +1388,68 @@ type ListUndoneTasksJSONRequestBody = UndoneTasksFilter
 
 // UpdateTaskJSONRequestBody defines body for UpdateTask for application/json ContentType.
 type UpdateTaskJSONRequestBody = TaskUpdateRequest
+
+// AsTaskCompletionTime0 returns the union data inside the TaskCompletionTime as a TaskCompletionTime0
+func (t TaskCompletionTime) AsTaskCompletionTime0() (TaskCompletionTime0, error) {
+	var body TaskCompletionTime0
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromTaskCompletionTime0 overwrites any union data inside the TaskCompletionTime as the provided TaskCompletionTime0
+func (t *TaskCompletionTime) FromTaskCompletionTime0(v TaskCompletionTime0) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeTaskCompletionTime0 performs a merge with any union data inside the TaskCompletionTime, using the provided TaskCompletionTime0
+func (t *TaskCompletionTime) MergeTaskCompletionTime0(v TaskCompletionTime0) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+// AsTaskCompletionTime1 returns the union data inside the TaskCompletionTime as a TaskCompletionTime1
+func (t TaskCompletionTime) AsTaskCompletionTime1() (TaskCompletionTime1, error) {
+	var body TaskCompletionTime1
+	err := json.Unmarshal(t.union, &body)
+	return body, err
+}
+
+// FromTaskCompletionTime1 overwrites any union data inside the TaskCompletionTime as the provided TaskCompletionTime1
+func (t *TaskCompletionTime) FromTaskCompletionTime1(v TaskCompletionTime1) error {
+	b, err := json.Marshal(v)
+	t.union = b
+	return err
+}
+
+// MergeTaskCompletionTime1 performs a merge with any union data inside the TaskCompletionTime, using the provided TaskCompletionTime1
+func (t *TaskCompletionTime) MergeTaskCompletionTime1(v TaskCompletionTime1) error {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+
+	merged, err := runtime.JSONMerge(t.union, b)
+	t.union = merged
+	return err
+}
+
+func (t TaskCompletionTime) MarshalJSON() ([]byte, error) {
+	b, err := t.union.MarshalJSON()
+	return b, err
+}
+
+func (t *TaskCompletionTime) UnmarshalJSON(b []byte) error {
+	err := t.union.UnmarshalJSON(b)
+	return err
+}
 
 // RequestEditorFn  is the function signature for the RequestEditor callback function
 type RequestEditorFn func(ctx context.Context, req *http.Request) error
