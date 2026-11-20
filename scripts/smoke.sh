@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Live smoke test against the real TickTick API.
 # Requires: TICKTICK_TOKEN env (or ~/.config/ticktick/token), built ./ticktick.
-# Safety: creates ONE scratch project "tt-cli-smoke-*", mutates only tasks
-# inside it, and deletes the project at the end (also on failure via trap).
+# Safety: creates scratch projects "tt-cli-smoke-*", mutates only tasks inside
+# them, and deletes them at the end (also on failure via trap).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -22,20 +22,29 @@ $BIN preference --json
 step "project list (read-only)"
 $BIN project list --json | jget '' | head -c 300; echo
 
-step "tag list / group list / habit list / countdown list (read-only)"
+step "tag list / group list / habit list / countdown list / habit sections (read-only)"
 $BIN tag list --json >/dev/null
 $BIN group list --json >/dev/null
 $BIN habit list --json >/dev/null
 $BIN countdown list --json >/dev/null
+$BIN habit sections --json >/dev/null
+echo ok
+
+step "focus list (read-only, last 30 days, both types)"
+$BIN focus list --from "$(date -u -d '-29 days' +%Y-%m-%d)" --to "$(date -u +%Y-%m-%d)" --type 0 --json >/dev/null
+$BIN focus list --from "$(date -u -d '-29 days' +%Y-%m-%d)" --to "$(date -u +%Y-%m-%d)" --type 1 --json >/dev/null
 echo ok
 
 NAME="tt-cli-smoke-$RANDOM$RANDOM"
 PID=""
+PID2=""
 cleanup() {
-  if [ -n "$PID" ]; then
-    step "cleanup: delete scratch project $PID"
-    $BIN project delete "$PID" --json || true
-  fi
+  for p in "$PID2" "$PID"; do
+    if [ -n "$p" ]; then
+      step "cleanup: delete scratch project $p"
+      $BIN project delete "$p" --json || true
+    fi
+  done
 }
 trap cleanup EXIT
 
@@ -77,10 +86,36 @@ echo ok
 
 step "project data / members"
 $BIN project data "$PID" --json >/dev/null
-$BIN project members "$PID" --json >/dev/null
+ME=$($BIN project members "$PID" --json | jget '0.username')
+echo "me=$ME"
+
+step "assign / unassign T1"
+$BIN task assign "$T1" --project "$PID" --username "$ME" --json | jget assigneeUsername
+$BIN task unassign "$T1" --project "$PID" --json >/dev/null
 echo ok
 
-step "complete T1, list completed"
+step "batch add T3 + update T1"
+B=$($BIN task batch --data "{\"add\":[{\"title\":\"smoke task 3\",\"projectId\":\"$PID\"}],\"update\":[{\"id\":\"$T1\",\"projectId\":\"$PID\",\"title\":\"smoke task 1 batched\"}]}" --json)
+echo "$B" | jget status
+T3=$(echo "$B" | node -e 'let d="";process.stdin.on("data",c=>d+=c);process.stdin.on("end",()=>{const j=JSON.parse(d);const it=(j.items||[]).find(x=>x.operation==="add");if(!it)throw new Error("no add item");console.log(it.taskId)})')
+echo "T3=$T3"
+
+step "move T3 to second scratch project and back"
+PID2=$($BIN project create --name "$NAME-2" --json | jget id)
+$BIN task move --from "$PID" --to "$PID2" --ids "$T3" --json | jget '0.id'
+$BIN task move --from "$PID2" --to "$PID" --ids "$T3" --json | jget '0.id'
+echo ok
+
+step "focus create / get / delete on T1"
+DAY=$(date -u +%Y-%m-%d)
+F=$($BIN focus create --type 1 --task "$T1" --note "smoke focus" --start "$DAY 06:00" --end "$DAY 06:25" --duration 1500 --json)
+FID=$(echo "$F" | jget id)
+$BIN focus get "$FID" --type 1 --json | jget id
+$BIN focus delete "$FID" --type 1 --json | jget id
+echo ok
+
+step "complete-many T3, complete T1, list completed"
+$BIN task complete-many --ids "$T3" --project "$PID" --json
 $BIN task complete "$T1" --project "$PID" --json
 $BIN task completed --projects "$PID" --json | jget '' | head -c 200; echo
 

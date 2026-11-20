@@ -62,21 +62,21 @@ func taskCmtNewServer(t *testing.T) *taskCmtTestServer {
 					{
 						Id:          Ptr("comment-1"),
 						Title:       Ptr("Comment text"),
-						CreatedTime: Ptr("2026-04-07T09:00:00+0000"),
+						CreatedTime: Ptr(int64(1775552400000)),
 						ModifiedTime: Ptr(
-							"2026-04-07T09:00:00+0000"),
+							int64(1775552400000)),
 					},
 					{
 						Id:          Ptr("comment-2"),
 						Title:       Ptr("Second comment"),
-						CreatedTime: Ptr("2026-04-07T10:00:00+0000"),
+						CreatedTime: Ptr(int64(1775556000000)),
 					},
 				}
 			case projectID == "p2" && taskID == "t2":
 				list = []api.OpenComment{{
 					Id:          Ptr("comment-3"),
 					Title:       Ptr("Comment on p2/t2"),
-					CreatedTime: Ptr("2026-04-07T11:00:00+0000"),
+					CreatedTime: Ptr(int64(1775559600000)),
 				}}
 			default:
 				// Tasks with no comments (including "empty").
@@ -99,9 +99,9 @@ func taskCmtNewServer(t *testing.T) *taskCmtTestServer {
 			_ = json.NewEncoder(w).Encode(api.OpenComment{
 				Id:          Ptr("comment-9"),
 				Title:       Ptr(req.Title),
-				CreatedTime: Ptr("2026-04-07T12:00:00+0000"),
+				CreatedTime: Ptr(int64(1775563200000)),
 				ModifiedTime: Ptr(
-					"2026-04-07T12:00:00+0000"),
+					int64(1775563200000)),
 			})
 
 		case r.Method == http.MethodDelete && len(parts) == 8 && parts[6] == "comment":

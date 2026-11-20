@@ -1195,6 +1195,21 @@ components:
         etag:
           type: string
           description: Entity tag (present in live responses).
+        etimestamp:
+          type: integer
+          format: int64
+          description: Entity timestamp, epoch milliseconds (present in live responses; not in official docs table).
+        createdTime:
+          type: string
+          description: 'Created time in "yyyy-MM-dd''T''HH:mm:ssZ" format (present in live responses; not in official docs table).'
+          example: '2020-01-02T03:04:05.000+0000'
+        modifiedTime:
+          type: string
+          description: 'Modified time in "yyyy-MM-dd''T''HH:mm:ssZ" format (present in live responses; not in official docs table).'
+          example: '2020-01-02T03:04:06.000+0000'
+        isFloating:
+          type: boolean
+          description: Whether the task floats (no fixed time; present in live responses, not in official docs table).
 
     Project:
       type: object
@@ -1310,6 +1325,14 @@ components:
         title:
           type: string
           description: Task title.
+        projectName:
+          type: string
+          description: Project name (present in live responses; not in official docs table).
+        tags:
+          type: array
+          description: Task tags (present in live responses; not in official docs table).
+          items:
+            type: string
         habitId:
           type: string
           description: Habit id.
@@ -1606,13 +1629,15 @@ components:
           type: string
           description: Comment text.
         modifiedTime:
-          type: string
-          description: 'Modified time in "yyyy-MM-dd''T''HH:mm:ssZ" format, e.g. "2019-11-13T03:00:00+0000".'
-          example: '2019-11-13T03:00:00+0000'
+          type: integer
+          format: int64
+          description: 'Modified time as epoch milliseconds. NOTE: official docs claim a "yyyy-MM-dd''T''HH:mm:ssZ" string, but the live API returns a number (verified 2026-11-20); the live shape wins.'
+          example: 1577934245000
         createdTime:
-          type: string
-          description: 'Created time in "yyyy-MM-dd''T''HH:mm:ssZ" format, e.g. "2019-11-13T03:00:00+0000".'
-          example: '2019-11-13T03:00:00+0000'
+          type: integer
+          format: int64
+          description: 'Created time as epoch milliseconds. NOTE: official docs claim a string, but the live API returns a number (verified 2026-11-20); the live shape wins.'
+          example: 1577934245000
         replyCommentId:
           type: string
           description: Reply comment identifier.
@@ -1786,7 +1811,7 @@ components:
 
     MoveTaskResult:
       type: object
-      description: Result of moving one task between projects.
+      description: Result of moving one task between projects (live shape includes extra task fields).
       properties:
         id:
           type: string
@@ -1794,11 +1819,34 @@ components:
         etag:
           type: string
           description: Entity tag of the moved task.
+        isAllDay:
+          type: boolean
+          description: Whether the moved task is all day (present in live responses).
+        isFloating:
+          type: boolean
+          description: Whether the moved task floats (present in live responses).
+        etimestamp:
+          type: integer
+          format: int64
+          description: Entity timestamp, epoch milliseconds (present in live responses).
+        modifiedTime:
+          type: string
+          description: 'Modified time in "yyyy-MM-dd''T''HH:mm:ssZ" format (present in live responses).'
+          example: '2020-01-02T03:05:06.000+0000'
 
     TaskBatchResult:
       type: object
-      description: Result of a batch create or update request.
+      description: Result of a batch create or update request. Live responses include status and per-item results in addition to the documented id2etag/id2error maps.
       properties:
+        status:
+          type: string
+          description: 'Overall batch status (live field), e.g. "complete" or "partial".'
+          example: partial
+        items:
+          type: array
+          description: Per-operation results (live field), in request order.
+          items:
+            $ref: '#/components/schemas/TaskBatchItem'
         id2etag:
           type: object
           description: Map of task IDs to their etags.
@@ -1809,6 +1857,27 @@ components:
           description: 'Map of task IDs to error codes: EXISTED, DELETED, NOT_EXISTED, PROJECT_MOVE_ERROR, EXCEED_QUOTA, UNKNOWN, NO_PROJECT_PERMISSION, NO_TEAM_PERMISSION.'
           additionalProperties:
             type: string
+
+    TaskBatchItem:
+      type: object
+      description: One operation result inside a batch response (live shape).
+      properties:
+        operation:
+          type: string
+          description: 'Operation kind: "add" or "update".'
+        index:
+          type: integer
+          format: int32
+          description: Zero-based index within the corresponding request array.
+        taskId:
+          type: string
+          description: Task identifier.
+        etag:
+          type: string
+          description: Entity tag on success; null on failure.
+        errorCode:
+          type: string
+          description: 'Lowercase error code on failure (e.g. "resource_not_found"); null on success.'
 
     TaskCreateRequest:
       type: object

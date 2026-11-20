@@ -51,6 +51,15 @@ func FmtTime(s string) string {
 	return s
 }
 
+// FmtEpochMs renders epoch milliseconds (used by OpenComment created/modified
+// times in the live API) for humans; 0 → "".
+func FmtEpochMs(ms int64) string {
+	if ms == 0 {
+		return ""
+	}
+	return time.UnixMilli(ms).Local().Format("2006-01-02 15:04")
+}
+
 // ParseStamp accepts YYYYMMDD ("20260407") or "2026-04-07" and returns
 // the integer stamp used by habit check-ins and countdowns.
 func ParseStamp(s string) (int32, error) {

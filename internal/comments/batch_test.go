@@ -72,12 +72,12 @@ func newTaskCmtServer(t *testing.T, delay time.Duration, notFound ...string) *ta
 			{
 				Id:          taskCmtPtr("comment-" + taskID + "-1"),
 				Title:       taskCmtPtr("Comment on " + taskID),
-				CreatedTime: taskCmtPtr("2026-04-07T09:00:00+0000"),
+				CreatedTime: taskCmtPtr(int64(1775552400000)),
 			},
 			{
 				Id:          taskCmtPtr("comment-" + taskID + "-2"),
 				Title:       taskCmtPtr("Second comment on " + taskID),
-				CreatedTime: taskCmtPtr("2026-04-07T10:30:00+0000"),
+				CreatedTime: taskCmtPtr(int64(1775557800000)),
 			},
 		}
 		if taskID == "t3" {

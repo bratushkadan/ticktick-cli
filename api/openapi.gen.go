@@ -364,25 +364,37 @@ type HabitUpdateRequest struct {
 	Unit *string `json:"unit,omitempty"`
 }
 
-// MoveTaskResult Result of moving one task between projects.
+// MoveTaskResult Result of moving one task between projects (live shape includes extra task fields).
 type MoveTaskResult struct {
 	// Etag Entity tag of the moved task.
 	Etag *string `json:"etag,omitempty"`
 
+	// Etimestamp Entity timestamp, epoch milliseconds (present in live responses).
+	Etimestamp *int64 `json:"etimestamp,omitempty"`
+
 	// Id Task identifier.
 	Id *string `json:"id,omitempty"`
+
+	// IsAllDay Whether the moved task is all day (present in live responses).
+	IsAllDay *bool `json:"isAllDay,omitempty"`
+
+	// IsFloating Whether the moved task floats (present in live responses).
+	IsFloating *bool `json:"isFloating,omitempty"`
+
+	// ModifiedTime Modified time in "yyyy-MM-dd'T'HH:mm:ssZ" format (present in live responses).
+	ModifiedTime *string `json:"modifiedTime,omitempty"`
 }
 
 // OpenComment A comment on a task.
 type OpenComment struct {
-	// CreatedTime Created time in "yyyy-MM-dd'T'HH:mm:ssZ" format, e.g. "2019-11-13T03:00:00+0000".
-	CreatedTime *string `json:"createdTime,omitempty"`
+	// CreatedTime Created time as epoch milliseconds. NOTE: official docs claim a string, but the live API returns a number (verified 2026-11-20); the live shape wins.
+	CreatedTime *int64 `json:"createdTime,omitempty"`
 
 	// Id Comment identifier.
 	Id *string `json:"id,omitempty"`
 
-	// ModifiedTime Modified time in "yyyy-MM-dd'T'HH:mm:ssZ" format, e.g. "2019-11-13T03:00:00+0000".
-	ModifiedTime *string `json:"modifiedTime,omitempty"`
+	// ModifiedTime Modified time as epoch milliseconds. NOTE: official docs claim a "yyyy-MM-dd'T'HH:mm:ssZ" string, but the live API returns a number (verified 2026-11-20); the live shape wins.
+	ModifiedTime *int64 `json:"modifiedTime,omitempty"`
 
 	// ReplyCommentId Reply comment identifier.
 	ReplyCommentId *string `json:"replyCommentId,omitempty"`
@@ -699,8 +711,14 @@ type OpenPomodoroTaskBrief struct {
 	// HabitId Habit id.
 	HabitId *string `json:"habitId,omitempty"`
 
+	// ProjectName Project name (present in live responses; not in official docs table).
+	ProjectName *string `json:"projectName,omitempty"`
+
 	// StartTime Task focus start time in "yyyy-MM-dd'T'HH:mm:ssZ" format, e.g. "2019-11-13T03:00:00+0000".
 	StartTime *string `json:"startTime,omitempty"`
+
+	// Tags Task tags (present in live responses; not in official docs table).
+	Tags *[]string `json:"tags,omitempty"`
 
 	// TaskId Task id.
 	TaskId *string `json:"taskId,omitempty"`
@@ -906,6 +924,9 @@ type Task struct {
 	// Content Task content.
 	Content *string `json:"content,omitempty"`
 
+	// CreatedTime Created time in "yyyy-MM-dd'T'HH:mm:ssZ" format (present in live responses; not in official docs table).
+	CreatedTime *string `json:"createdTime,omitempty"`
+
 	// Desc Task description of checklist.
 	Desc *string `json:"desc,omitempty"`
 
@@ -914,6 +935,9 @@ type Task struct {
 
 	// Etag Entity tag (present in live responses).
 	Etag *string `json:"etag,omitempty"`
+
+	// Etimestamp Entity timestamp, epoch milliseconds (present in live responses; not in official docs table).
+	Etimestamp *int64 `json:"etimestamp,omitempty"`
 
 	// FocusSummaries Focus summaries of the task.
 	FocusSummaries *[]OpenFocusSummary `json:"focusSummaries,omitempty"`
@@ -924,11 +948,17 @@ type Task struct {
 	// IsAllDay Whether the task is all day.
 	IsAllDay *bool `json:"isAllDay,omitempty"`
 
+	// IsFloating Whether the task floats (no fixed time; present in live responses, not in official docs table).
+	IsFloating *bool `json:"isFloating,omitempty"`
+
 	// Items Subtasks of the task.
 	Items *[]ChecklistItem `json:"items,omitempty"`
 
 	// Kind Task kind.
 	Kind *TaskKind `json:"kind,omitempty"`
+
+	// ModifiedTime Modified time in "yyyy-MM-dd'T'HH:mm:ssZ" format (present in live responses; not in official docs table).
+	ModifiedTime *string `json:"modifiedTime,omitempty"`
 
 	// ParentId Parent task identifier. Set to an empty string "" to remove the parent-child relationship.
 	ParentId *string `json:"parentId,omitempty"`
@@ -985,6 +1015,24 @@ type TaskAssignRequest struct {
 	TaskId string `json:"taskId"`
 }
 
+// TaskBatchItem One operation result inside a batch response (live shape).
+type TaskBatchItem struct {
+	// ErrorCode Lowercase error code on failure (e.g. "resource_not_found"); null on success.
+	ErrorCode *string `json:"errorCode,omitempty"`
+
+	// Etag Entity tag on success; null on failure.
+	Etag *string `json:"etag,omitempty"`
+
+	// Index Zero-based index within the corresponding request array.
+	Index *int32 `json:"index,omitempty"`
+
+	// Operation Operation kind: "add" or "update".
+	Operation *string `json:"operation,omitempty"`
+
+	// TaskId Task identifier.
+	TaskId *string `json:"taskId,omitempty"`
+}
+
 // TaskBatchRequest Request body for batch creating and updating tasks. Each array supports up to 50 tasks.
 type TaskBatchRequest struct {
 	// Add Tasks to create, up to 50 tasks.
@@ -994,13 +1042,19 @@ type TaskBatchRequest struct {
 	Update *[]TaskUpdateRequest `json:"update,omitempty"`
 }
 
-// TaskBatchResult Result of a batch create or update request.
+// TaskBatchResult Result of a batch create or update request. Live responses include status and per-item results in addition to the documented id2etag/id2error maps.
 type TaskBatchResult struct {
 	// Id2error Map of task IDs to error codes: EXISTED, DELETED, NOT_EXISTED, PROJECT_MOVE_ERROR, EXCEED_QUOTA, UNKNOWN, NO_PROJECT_PERMISSION, NO_TEAM_PERMISSION.
 	Id2error *map[string]string `json:"id2error,omitempty"`
 
 	// Id2etag Map of task IDs to their etags.
 	Id2etag *map[string]string `json:"id2etag,omitempty"`
+
+	// Items Per-operation results (live field), in request order.
+	Items *[]TaskBatchItem `json:"items,omitempty"`
+
+	// Status Overall batch status (live field), e.g. "complete" or "partial".
+	Status *string `json:"status,omitempty"`
 }
 
 // TaskCreateRequest Request body for creating a task. parentId and kind are extensions of the documented request table, taken from the Task definition.

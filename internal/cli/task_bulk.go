@@ -43,9 +43,16 @@ Either pass --from, --to and --ids to move several tasks the same way, or pass
 		Example: `  ticktick task move --from 69a850ef1c20d2030e148fdd --to 69a850f41c20d2030e148fdf --ids 69a850f8b9061f374d54a046
   ticktick task move --data '[{"fromProjectId":"69a850ef1c20d2030e148fdd","toProjectId":"69a850f41c20d2030e148fdf","taskId":"69a850f8b9061f374d54a046"}]' --json
 
-Example API response:
+Example API response (live shape; extra task fields are included):
 [
-  {"id": "69a850f8b9061f374d54a046", "etag": "43p2zso1"}
+  {
+    "id": "69a850f8b9061f374d54a046",
+    "isAllDay": false,
+    "isFloating": false,
+    "etag": "43p2zso1",
+    "etimestamp": 1577934306000,
+    "modifiedTime": "2020-01-02T03:05:06.000+0000"
+  }
 ]`,
 		RunE: taskBulkMoveRun,
 	}
@@ -57,15 +64,21 @@ Example API response:
 
 The body is a JSON object with optional "add" and "update" arrays; each array
 supports up to 50 tasks. The response maps task IDs to etags (id2etag) and, for
-failed entries, to error codes (id2error).`,
+failed entries, to error codes (id2error); live responses also include an
+overall "status" ("complete"/"partial") and per-operation "items".`,
 		Args: cobra.NoArgs,
 		Example: `  ticktick task batch --data '{"add":[{"title":"New task","projectId":"projectId"}],"update":[{"id":"taskId","projectId":"projectId","title":"Updated task"}]}'
   ticktick task batch --file batch.json --json
 
-Example API response:
+Example API response (live shape):
 {
+  "status": "partial",
+  "items": [
+    {"operation": "add", "index": 0, "taskId": "taskId", "etag": "43p2zso1", "errorCode": null},
+    {"operation": "update", "index": 0, "taskId": "ghost", "etag": null, "errorCode": "resource_not_found"}
+  ],
   "id2etag": {"taskId": "43p2zso1"},
-  "id2error": {}
+  "id2error": {"ghost": "NOT_EXISTED"}
 }`,
 		RunE: taskBulkBatchRun,
 	}
@@ -340,13 +353,18 @@ func taskBulkBatchRun(cmd *cobra.Command, _ []string) error {
 	}
 	return Render(resp.Body, func(w io.Writer) {
 		var etags, errs map[string]string
+		status := ""
 		if resp.JSON200 != nil {
+			status = Str(resp.JSON200.Status)
 			if resp.JSON200.Id2etag != nil {
 				etags = *resp.JSON200.Id2etag
 			}
 			if resp.JSON200.Id2error != nil {
 				errs = *resp.JSON200.Id2error
 			}
+		}
+		if status != "" {
+			fmt.Fprintf(w, "Status: %s\n", status)
 		}
 		fmt.Fprintf(w, "OK: %d task(s)\n", len(etags))
 		for _, id := range taskBulkSortedKeys(etags) {

@@ -32,13 +32,15 @@ var taskCommentsCmd = &cobra.Command{
 	Example: `  ticktick task comments 641a2b3c4d5e6f7890abcdef --project 63f1a2b3c4d5e6f7890abcde
   ticktick task comments 641a2b3c4d5e6f7890abcdef --project 63f1a2b3c4d5e6f7890abcde --json
 
-Example API response:
+Example API response (live shape; created/modifiedTime are epoch milliseconds,
+although the official docs show strings):
 [
   {
     "id": "comment-1",
+    "userId": 12345,
     "title": "Comment text",
-    "createdTime": "2026-04-07T09:00:00+0000",
-    "modifiedTime": "2026-04-07T09:00:00+0000"
+    "createdTime": 1577934245000,
+    "modifiedTime": 1577934245000
   }
 ]`,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -67,12 +69,13 @@ var taskCommentAddCmd = &cobra.Command{
 	Example: `  ticktick task comment-add 641a2b3c4d5e6f7890abcdef --project 63f1a2b3c4d5e6f7890abcde --text "Looks good to me"
   ticktick task comment-add 641a2b3c4d5e6f7890abcdef --project 63f1a2b3c4d5e6f7890abcde --text "Looks good to me" --json
 
-Example API response:
+Example API response (live shape; created/modifiedTime are epoch milliseconds):
 {
   "id": "comment-1",
+  "userId": 12345,
   "title": "Comment text",
-  "createdTime": "2026-04-07T09:00:00+0000",
-  "modifiedTime": "2026-04-07T09:00:00+0000"
+  "createdTime": 1577934245000,
+  "modifiedTime": 1577934245000
 }`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		c, err := newClient()
@@ -155,14 +158,15 @@ still printed and the exit code is 1.`,
   # form 2: explicit project:task pairs (may span projects)
   ticktick task comments-batch --tasks 63f1a2b3c4d5e6f7890abcde:641a2b3c4d5e6f7890ab01,63f1a2b3c4d5e6f7890abcdf:641a2b3c4d5e6f7890ab02 --workers 8 --json
 
-Example API response:
+Example API response (assembled map; per-task comment times are epoch milliseconds):
 {
   "<taskId>": [
     {
       "id": "comment-1",
+      "userId": 12345,
       "title": "Comment text",
-      "createdTime": "2026-04-07T09:00:00+0000",
-      "modifiedTime": "2026-04-07T09:00:00+0000"
+      "createdTime": 1577934245000,
+      "modifiedTime": 1577934245000
     }
   ]
 }
@@ -244,7 +248,7 @@ func printCommentLines(w io.Writer, list []api.OpenComment) {
 		return
 	}
 	for _, cm := range list {
-		fmt.Fprintf(w, "  [%s] %s  (id: %s)\n", FmtTime(Str(cm.CreatedTime)), Str(cm.Title), Str(cm.Id))
+		fmt.Fprintf(w, "  [%s] %s  (id: %s)\n", FmtEpochMs(I64(cm.CreatedTime)), Str(cm.Title), Str(cm.Id))
 	}
 }
 
