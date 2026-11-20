@@ -4,20 +4,41 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"ticktick-cli/api"
 )
 
-// newClient builds the generated API client with bearer auth and timeout.
+var apiTransport http.RoundTripper
+
+// newClient builds the generated API client with bearer auth over HTTPS.
 func newClient() (*api.ClientWithResponses, error) {
+	baseURL := resolveBaseURL()
+	parsedURL, err := url.Parse(baseURL)
+	if err != nil || parsedURL.Scheme != "https" || parsedURL.Hostname() == "" {
+		return nil, fmt.Errorf("API base URL must be an absolute HTTPS URL")
+	}
+
 	token, err := resolveToken()
 	if err != nil {
 		return nil, err
 	}
-	httpClient := &http.Client{Timeout: flagTimeout}
+	httpClient := &http.Client{
+		Timeout:   flagTimeout,
+		Transport: apiTransport,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if req.URL.Scheme != "https" {
+				return fmt.Errorf("API redirect must use HTTPS")
+			}
+			if len(via) >= 10 {
+				return fmt.Errorf("stopped after 10 redirects")
+			}
+			return nil
+		},
+	}
 	return api.NewClientWithResponses(
-		resolveBaseURL(),
+		baseURL,
 		api.WithHTTPClient(httpClient),
 		api.WithRequestEditorFn(func(ctx context.Context, req *http.Request) error {
 			req.Header.Set("Authorization", "Bearer "+token)

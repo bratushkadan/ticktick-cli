@@ -15,10 +15,9 @@ import (
 // returns it. Handlers assert method/path/query themselves.
 func focusTestServer(t *testing.T, h http.HandlerFunc) *httptest.Server {
 	t.Helper()
-	srv := httptest.NewServer(h)
+	srv := httptest.NewTLSServer(h)
 	t.Cleanup(srv.Close)
-	t.Setenv("TICKTICK_BASE_URL", srv.URL)
-	t.Setenv("TICKTICK_TOKEN", "test-token")
+	useTestAPIServer(t, srv)
 	return srv
 }
 

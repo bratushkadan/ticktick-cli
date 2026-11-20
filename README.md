@@ -82,12 +82,13 @@ export TICKTICK_TOKEN="$TOKEN"
 | Флаг | Переменная | По умолчанию | Назначение |
 |---|---|---|---|
 | `--token string` | `TICKTICK_TOKEN` | — | API-токен |
-| `--base-url string` | `TICKTICK_BASE_URL` | `https://api.ticktick.com` | базовый URL API |
+| `--base-url string` | `TICKTICK_BASE_URL` | `https://api.ticktick.com` | базовый URL API с HTTPS |
 | `--timeout duration` | — | `30s` | таймаут HTTP-запроса |
 | `--json` | — | `false` | сырой JSON ответа в stdout |
 
 > **Безопасность.** Не коммитьте токен: `.gitignore` уже исключает `.env`,
 > `*.token` и `token`. Файл `~/.config/ticktick/token` держите с правами `600`.
+> Запросы к API и редиректы допускаются только по HTTPS.
 > Токен даёт полный доступ к аккаунту, включая удаление задач и проектов.
 
 ## Формат вывода
@@ -114,8 +115,8 @@ $ echo $?
 сбой батча. При не-2xx ответе в сообщении есть HTTP-статус и тело ответа
 (обрезается до 300 символов).
 
-В `--help` **каждой** команды есть блок `Example API response` с реальным
-примером ответа (для пустых ответов — пометка `empty body, HTTP 200`):
+В `--help` **каждой** команды есть блок `Example API response` с примером
+формата ответа (для пустых ответов — пометка `empty body, HTTP 200`):
 
 ```bash
 ./ticktick task create --help | sed -n '/Example API response/,/^$/p'

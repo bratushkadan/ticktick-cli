@@ -43,7 +43,7 @@ const taskCrudSampleTaskJSON = `{
 // and path, then delegates the response to fn.
 func taskCrudServer(t *testing.T, method, path string, fn func(w http.ResponseWriter, r *http.Request)) {
 	t.Helper()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Authorization"); got != "Bearer test-token" {
 			t.Errorf("Authorization header = %q, want %q", got, "Bearer test-token")
 		}
@@ -56,8 +56,7 @@ func taskCrudServer(t *testing.T, method, path string, fn func(w http.ResponseWr
 		fn(w, r)
 	}))
 	t.Cleanup(srv.Close)
-	t.Setenv("TICKTICK_BASE_URL", srv.URL)
-	t.Setenv("TICKTICK_TOKEN", "test-token")
+	useTestAPIServer(t, srv)
 }
 
 // taskCrudWriteJSON writes the standard 200 JSON task response.

@@ -34,8 +34,7 @@ func taskBulkResetFlags() {
 // token and body of the inbound request, then replies with respBody.
 func taskBulkSetup(t *testing.T, wantPath, respBody string, check func(t *testing.T, body []byte)) {
 	t.Helper()
-	t.Setenv("TICKTICK_TOKEN", "test-token")
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			t.Errorf("method = %s, want POST", r.Method)
 		}
@@ -57,7 +56,7 @@ func taskBulkSetup(t *testing.T, wantPath, respBody string, check func(t *testin
 		_, _ = io.WriteString(w, respBody)
 	}))
 	t.Cleanup(srv.Close)
-	t.Setenv("TICKTICK_BASE_URL", srv.URL)
+	useTestAPIServer(t, srv)
 }
 
 // taskBulkDocTask is the trimmed Task JSON from the official docs (GET task).

@@ -52,7 +52,7 @@ func columnCheckJSON(t *testing.T, got, want string) {
 // replies with respBody, then points the CLI at it for the duration of the test.
 func columnServer(t *testing.T, wantMethod, wantPath, wantBody, respBody string) {
 	t.Helper()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != wantMethod {
 			t.Errorf("method = %s, want %s", r.Method, wantMethod)
 		}
@@ -75,8 +75,7 @@ func columnServer(t *testing.T, wantMethod, wantPath, wantBody, respBody string)
 		_, _ = io.WriteString(w, respBody)
 	}))
 	t.Cleanup(srv.Close)
-	t.Setenv("TICKTICK_BASE_URL", srv.URL)
-	t.Setenv("TICKTICK_TOKEN", "test-token")
+	useTestAPIServer(t, srv)
 }
 
 // columnRun executes the CLI with args and returns captured stdout.

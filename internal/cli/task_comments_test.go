@@ -115,7 +115,7 @@ func taskCmtNewServer(t *testing.T) *taskCmtTestServer {
 		}
 	}
 
-	s.srv = httptest.NewServer(http.HandlerFunc(handler))
+	s.srv = httptest.NewTLSServer(http.HandlerFunc(handler))
 	t.Cleanup(s.srv.Close)
 	return s
 }
@@ -124,8 +124,7 @@ func taskCmtNewServer(t *testing.T) *taskCmtTestServer {
 func taskCmtSetup(t *testing.T) *taskCmtTestServer {
 	t.Helper()
 	s := taskCmtNewServer(t)
-	t.Setenv("TICKTICK_BASE_URL", s.srv.URL)
-	t.Setenv("TICKTICK_TOKEN", "test-token")
+	useTestAPIServer(t, s.srv)
 	return s
 }
 

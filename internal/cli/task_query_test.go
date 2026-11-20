@@ -61,7 +61,7 @@ const taskQueryFilterJSON = `[
 func taskQueryServer[T any](t *testing.T, wantPath, respJSON string) (*httptest.Server, <-chan T) {
 	t.Helper()
 	bodyCh := make(chan T, 1)
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			t.Errorf("method = %s, want POST", r.Method)
 		}
@@ -86,8 +86,7 @@ func taskQueryServer[T any](t *testing.T, wantPath, respJSON string) (*httptest.
 // taskQueryEnv points the CLI at the test server.
 func taskQueryEnv(t *testing.T, srv *httptest.Server) {
 	t.Helper()
-	t.Setenv("TICKTICK_BASE_URL", srv.URL)
-	t.Setenv("TICKTICK_TOKEN", "test-token")
+	useTestAPIServer(t, srv)
 }
 
 // taskQueryBody returns the request body captured by taskQueryServer.

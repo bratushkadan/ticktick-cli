@@ -43,7 +43,7 @@ AUTHENTICATION
 
 ENVIRONMENT
   TICKTICK_TOKEN     API token
-  TICKTICK_BASE_URL  API base URL (default https://api.ticktick.com)
+  TICKTICK_BASE_URL  HTTPS API base URL (default https://api.ticktick.com)
 
 EXAMPLES
   ticktick project list
@@ -67,7 +67,7 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&flagToken, "token", "",
 		"API token (overrides TICKTICK_TOKEN and ~/.config/ticktick/token)")
 	rootCmd.PersistentFlags().StringVar(&flagBaseURL, "base-url", "",
-		"API base URL (overrides TICKTICK_BASE_URL; default https://api.ticktick.com)")
+		"HTTPS API base URL (overrides TICKTICK_BASE_URL; default https://api.ticktick.com)")
 	rootCmd.PersistentFlags().DurationVar(&flagTimeout, "timeout", 30*time.Second,
 		"HTTP request timeout")
 

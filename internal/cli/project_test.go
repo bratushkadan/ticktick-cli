@@ -94,7 +94,7 @@ const (
 // request payloads; it returns documented example responses.
 func projectSetup(t *testing.T) *httptest.Server {
 	t.Helper()
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got, want := r.Header.Get("Authorization"), "Bearer test-token"; got != want {
 			t.Errorf("Authorization = %q, want %q", got, want)
 		}
@@ -167,8 +167,7 @@ func projectSetup(t *testing.T) *httptest.Server {
 		}
 	}))
 	t.Cleanup(srv.Close)
-	t.Setenv("TICKTICK_BASE_URL", srv.URL)
-	t.Setenv("TICKTICK_TOKEN", "test-token")
+	useTestAPIServer(t, srv)
 	return srv
 }
 
