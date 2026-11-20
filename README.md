@@ -61,8 +61,9 @@ make build
 Порядок разрешения токена (первый непустой источник побеждает):
 
 1. флаг `--token`;
-2. переменная окружения `TICKTICK_TOKEN`;
-3. файл `~/.config/ticktick/token`.
+2. переменные окружения `TICKTICK_TOKEN`, затем `TICKTICK_MCP_TOKEN`;
+3. те же ключи в файле `~/.config/ticktick/.env` или в файле, переданном через `--env-file`;
+4. файл `~/.config/ticktick/token`. Поддерживается токен одной строкой или запись `TICKTICK_TOKEN=...` / `TICKTICK_MCP_TOKEN=...`.
 
 ```bash
 # вариант 1: файл (рекомендуется для интерактивной работы)
@@ -75,19 +76,23 @@ export TICKTICK_TOKEN="$TOKEN"
 
 # вариант 3: разовый флаг
 ./ticktick project list --token "$TOKEN"
+
+# вариант 4: прочитать переменные из файла .env
+./ticktick project list --env-file .env
 ```
 
 Прочие глобальные флаги (доступны в любой команде):
 
 | Флаг | Переменная | По умолчанию | Назначение |
 |---|---|---|---|
-| `--token string` | `TICKTICK_TOKEN` | — | API-токен |
+| `--token string` | `TICKTICK_TOKEN`, `TICKTICK_MCP_TOKEN` | — | API-токен |
+| `--env-file path` | — | `~/.config/ticktick/.env` | файл с настройками TickTick |
 | `--base-url string` | `TICKTICK_BASE_URL` | `https://api.ticktick.com` | базовый URL API с HTTPS |
 | `--timeout duration` | — | `30s` | таймаут HTTP-запроса |
 | `--json` | — | `false` | сырой JSON ответа в stdout |
 
 > **Безопасность.** Не коммитьте токен: `.gitignore` уже исключает `.env`,
-> `*.token` и `token`. Файл `~/.config/ticktick/token` держите с правами `600`.
+> `*.token` и `token`. Файлы с токеном держите с правами `600`.
 > Запросы к API и редиректы допускаются только по HTTPS.
 > Токен даёт полный доступ к аккаунту, включая удаление задач и проектов.
 
@@ -283,7 +288,7 @@ RFC3339 — и нормализуются в формат API (`yyyy-MM-dd'T'HH:
 
 | Команда | Назначение |
 |---|---|
-| `version` | версия CLI (`ticktick-cli 1.0.0`) |
+| `version` | версия CLI (`ticktick-cli 1.1.0`) |
 | `help` | справка по любой команде |
 | `completion` | автодополнение для bash/zsh/fish/powershell |
 

@@ -44,6 +44,7 @@ func runCmd(t *testing.T, args ...string) error {
 	t.Helper()
 	flagJSON = false
 	flagToken = ""
+	flagEnvFile = ""
 	flagBaseURL = ""
 	flagTimeout = 30 * time.Second
 	rootCmd.SetArgs(args)

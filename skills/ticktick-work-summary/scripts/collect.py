@@ -8,7 +8,6 @@ import json
 import os
 from pathlib import Path
 import re
-import shlex
 import shutil
 import subprocess
 import sys
@@ -18,6 +17,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 UTC = timezone.utc
 DEFAULT_PROJECT = "69f71ec926b4e22bb727ca29"
 API_LIMIT = 200
+MINIMUM_CLI_VERSION = (1, 1, 0)
 
 
 def period(mode, anchor, zone):
@@ -39,37 +39,45 @@ def stamp(value):
     return result
 
 
-def cli_environment(env_file):
-    env = os.environ.copy()
-    allowed = {"TICKTICK_TOKEN", "TICKTICK_BASE_URL"}
-    if env_file.is_file():
-        for line in env_file.read_text(encoding="utf-8").splitlines():
-            match = re.fullmatch(r"\s*(?:export\s+)?(\w+)\s*=\s*(.*)", line)
-            if not match or match[1] not in allowed or env.get(match[1]):
-                continue
-            try:
-                parts = shlex.split(match[2], comments=True)
-            except ValueError:
-                raise ValueError(f"Invalid {match[1]} in {env_file}") from None
-            if parts:
-                env[match[1]] = parts[0]
-    return env
+def skill_checkout():
+    for directory in Path(__file__).resolve().parents:
+        if (directory / "cmd/ticktick/main.go").is_file() and (directory / "go.mod").is_file():
+            return directory
+    return None
 
 
 class TickTick:
     def __init__(self, cli, env_file):
         self.cli = cli
-        self.env = cli_environment(env_file)
+        self.env_flags = ["--env-file", str(env_file)] if env_file is not None else []
+
+    def check_version(self):
+        process = subprocess.run([self.cli, "version", "--json"], capture_output=True, text=True)
+        found = None
+        if process.returncode == 0:
+            try:
+                payload = json.loads(process.stdout)
+            except ValueError:
+                payload = None
+            if isinstance(payload, dict) and payload.get("name") == "ticktick-cli":
+                output = payload.get("version")
+                if isinstance(output, str):
+                    found = re.fullmatch(r"(\d+)\.(\d+)\.(\d+)", output)
+        if found and tuple(map(int, found.groups())) >= MINIMUM_CLI_VERSION:
+            return
+        minimum = ".".join(map(str, MINIMUM_CLI_VERSION))
+        detected = found[0] if found else "unknown"
+        raise RuntimeError(
+            f"{self.cli}: ticktick-cli {minimum} or newer required (found {detected}); "
+            "run make build in ticktick-cli or select an updated executable with --cli or TICKTICK_CLI."
+        )
 
     def read(self, *args, partial=False):
         process = subprocess.run(
-            [self.cli, *args, "--json"], capture_output=True, text=True, env=self.env,
+            [self.cli, *args, *self.env_flags, "--json"], capture_output=True, text=True,
         )
         if process.returncode and not (partial and process.stdout.strip()):
             error = process.stderr.strip()
-            token = self.env.get("TICKTICK_TOKEN")
-            if token:
-                error = error.replace(token, "[redacted]")
             raise RuntimeError(error or f"TickTick exited with code {process.returncode}")
         return json.loads(process.stdout)
 
@@ -208,8 +216,9 @@ def main():
     parser.add_argument("--projects", default=os.environ.get("TICKTICK_SUMMARY_PROJECTS", DEFAULT_PROJECT),
                         help="comma-separated TickTick project IDs (default: Work)")
     parser.add_argument("--cli", default=os.environ.get("TICKTICK_CLI"),
-                        help="TickTick executable (default: repo binary, then PATH)")
-    parser.add_argument("--env-file", type=Path, help="credentials file (default: .env next to CLI)")
+                        help="TickTick CLI 1.1.0+ (default: checkout binary, then PATH)")
+    parser.add_argument("--env-file", type=Path,
+                        help="TickTick dotenv file (default: checkout .env, then ~/.config/ticktick/.env)")
     parser.add_argument("--workers", type=int, choices=range(1, 9), default=8)
     args = parser.parse_args()
     projects = list(dict.fromkeys(part.strip() for part in args.projects.split(",") if part.strip()))
@@ -219,18 +228,25 @@ def main():
         zone = ZoneInfo(args.timezone)
     except ZoneInfoNotFoundError:
         parser.error(f"unknown timezone: {args.timezone}")
-    repo_cli = Path(__file__).resolve().parents[3] / "ticktick"
-    cli = shutil.which(args.cli or str(repo_cli)) or (None if args.cli else shutil.which("ticktick"))
+    checkout = skill_checkout()
+    if args.cli:
+        cli = shutil.which(args.cli)
+    else:
+        local = shutil.which(str(checkout / "ticktick")) if checkout is not None else None
+        cli = local or shutil.which("ticktick")
     if cli is None:
         parser.error("ticktick executable not found; use --cli or TICKTICK_CLI")
-    env_file = args.env_file or Path(cli).resolve().with_name(".env")
+    env_file = args.env_file
+    if env_file is None and checkout is not None and (checkout / ".env").is_file():
+        env_file = checkout / ".env"
     today = datetime.now(zone).date()
     start, end = period(args.mode, args.date or today, zone)
     # Use a whole-second boundary for the CLI, which drops fractional seconds.
     _, today_end = period("day", today, zone)
     try:
-        output = collect(TickTick(cli, env_file), projects, start, end, max(end, today_end), zone,
-                         args.workers)
+        client = TickTick(cli, env_file)
+        client.check_version()
+        output = collect(client, projects, start, end, max(end, today_end), zone, args.workers)
     except (RuntimeError, OSError, ValueError, TypeError, KeyError) as error:
         print(f"TickTick summary: {error}", file=sys.stderr)
         return 1

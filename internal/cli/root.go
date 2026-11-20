@@ -19,9 +19,12 @@ import (
 var (
 	flagJSON    bool
 	flagToken   string
+	flagEnvFile string
 	flagBaseURL string
 	flagTimeout time.Duration
 )
+
+const version = "1.1.0"
 
 var rootCmd = &cobra.Command{
 	Use:   "ticktick",
@@ -37,12 +40,14 @@ OUTPUT
   (pretty-printed, stdout) — designed for scripts and AI skills.
 
 AUTHENTICATION
-  Token resolution order: --token flag > TICKTICK_TOKEN env >
-  ~/.config/ticktick/token file.
+  Token resolution order: --token > environment > dotenv > ~/.config/ticktick/token.
+  The environment and dotenv accept TICKTICK_TOKEN, then TICKTICK_MCP_TOKEN.
+  Dotenv defaults to ~/.config/ticktick/.env; override it with --env-file.
   Create a personal token: TickTick web app > Settings > Account > API Token.
 
 ENVIRONMENT
   TICKTICK_TOKEN     API token
+  TICKTICK_MCP_TOKEN  Fall-back API token (also used by TickTick MCP)
   TICKTICK_BASE_URL  HTTPS API base URL (default https://api.ticktick.com)
 
 EXAMPLES
@@ -65,9 +70,11 @@ func init() {
 	rootCmd.PersistentFlags().BoolVar(&flagJSON, "json", false,
 		"print raw API response as JSON (works with every command)")
 	rootCmd.PersistentFlags().StringVar(&flagToken, "token", "",
-		"API token (overrides TICKTICK_TOKEN and ~/.config/ticktick/token)")
+		"API token (overrides environment and config files)")
+	rootCmd.PersistentFlags().StringVar(&flagEnvFile, "env-file", "",
+		"TickTick dotenv file (default ~/.config/ticktick/.env)")
 	rootCmd.PersistentFlags().StringVar(&flagBaseURL, "base-url", "",
-		"HTTPS API base URL (overrides TICKTICK_BASE_URL; default https://api.ticktick.com)")
+		"HTTPS API base URL (overrides TICKTICK_BASE_URL from environment and dotenv)")
 	rootCmd.PersistentFlags().DurationVar(&flagTimeout, "timeout", 30*time.Second,
 		"HTTP request timeout")
 
@@ -79,8 +86,8 @@ var versionCmd = &cobra.Command{
 	Short: "Print CLI version",
 	Args:  cobra.NoArgs,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return Render([]byte(`{"name":"ticktick-cli","version":"1.0.0"}`), func(w io.Writer) {
-			fmt.Fprintln(w, "ticktick-cli 1.0.0")
+		return Render([]byte(fmt.Sprintf(`{"name":"ticktick-cli","version":%q}`, version)), func(w io.Writer) {
+			fmt.Fprintln(w, "ticktick-cli", version)
 		})
 	},
 }

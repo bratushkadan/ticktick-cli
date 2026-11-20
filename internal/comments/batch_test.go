@@ -18,6 +18,21 @@ import (
 // importable here).
 func taskCmtPtr[T any](v T) *T { return &v }
 
+func TestFetchAllOmitsAuthenticationErrorBody(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "Invalid access token: mock-echoed-credential", http.StatusUnauthorized)
+	}))
+	t.Cleanup(srv.Close)
+	client, err := api.NewClientWithResponses(srv.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := FetchAll(context.Background(), client, []TaskRef{{ProjectID: "p1", TaskID: "t1"}}, 1)
+	if err := got.Errors["t1"]; err == nil || err.Error() != "HTTP 401: Unauthorized" {
+		t.Fatalf("expected sanitized HTTP 401, got %v", err)
+	}
+}
+
 // taskCmtServer is a fake TickTick comments endpoint that tracks
 // concurrency (max in-flight requests) and can fail selected task IDs.
 type taskCmtServer struct {

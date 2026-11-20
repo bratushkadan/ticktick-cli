@@ -11,6 +11,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"sync"
 
 	"ticktick-cli/api"
@@ -141,6 +142,10 @@ func fetchOne(ctx context.Context, client *api.ClientWithResponses, ref TaskRef)
 		return nil, fmt.Errorf("empty response")
 	}
 	if code := resp.StatusCode(); code < 200 || code >= 300 {
+		// TickTick can echo credentials in authentication error bodies.
+		if code == http.StatusUnauthorized || code == http.StatusForbidden {
+			return nil, fmt.Errorf("HTTP %d: %s", code, http.StatusText(code))
+		}
 		return nil, fmt.Errorf("HTTP %d: %s", code, bytes.TrimSpace(resp.Body))
 	}
 	if resp.JSON200 != nil {

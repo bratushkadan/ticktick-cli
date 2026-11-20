@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 
 	"ticktick-cli/api"
@@ -14,13 +15,19 @@ var apiTransport http.RoundTripper
 
 // newClient builds the generated API client with bearer auth over HTTPS.
 func newClient() (*api.ClientWithResponses, error) {
-	baseURL := resolveBaseURL()
+	dir := configDirectory()
+	values, err := loadDotenv(dir)
+	if err != nil {
+		return nil, err
+	}
+	baseURL := strings.TrimRight(firstValue(flagBaseURL, os.Getenv("TICKTICK_BASE_URL"),
+		values["TICKTICK_BASE_URL"], defaultBaseURL), "/")
 	parsedURL, err := url.Parse(baseURL)
 	if err != nil || parsedURL.Scheme != "https" || parsedURL.Hostname() == "" {
 		return nil, fmt.Errorf("API base URL must be an absolute HTTPS URL")
 	}
 
-	token, err := resolveToken()
+	token, err := resolveToken(dir, values)
 	if err != nil {
 		return nil, err
 	}
@@ -74,6 +81,13 @@ func (e *APIError) Error() string {
 func CheckHTTP(status int, body []byte) error {
 	if status >= 200 && status < 300 {
 		return nil
+	}
+	// Authentication errors can echo the full bearer token.
+	if status == http.StatusUnauthorized {
+		return &APIError{Status: status, Body: "TickTick rejected the credentials; check the configured API token"}
+	}
+	if status == http.StatusForbidden {
+		return &APIError{Status: status}
 	}
 	return &APIError{Status: status, Body: string(body)}
 }
