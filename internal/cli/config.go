@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 )
 
@@ -15,6 +16,10 @@ var dotenvValue = regexp.MustCompile(`^(?:"([^"]*)"|'([^']*)'|([^\s'"]+))(?:\s+#
 
 // readDotenv reads the supported TickTick settings without evaluating shell code.
 func readDotenv(path string, content []byte) (map[string]string, error) {
+	return readDotenvSettings(path, content, "TICKTICK_TOKEN", "TICKTICK_MCP_TOKEN", "TICKTICK_BASE_URL")
+}
+
+func readDotenvSettings(path string, content []byte, keys ...string) (map[string]string, error) {
 	values := make(map[string]string)
 	for i, line := range strings.Split(string(content), "\n") {
 		key, value, found := strings.Cut(strings.TrimSpace(line), "=")
@@ -22,9 +27,7 @@ func readDotenv(path string, content []byte) (map[string]string, error) {
 			continue
 		}
 		key = dotenvKey(key)
-		switch key {
-		case "TICKTICK_TOKEN", "TICKTICK_MCP_TOKEN", "TICKTICK_BASE_URL":
-		default:
+		if !slices.Contains(keys, key) {
 			continue
 		}
 		value = strings.TrimSpace(value)

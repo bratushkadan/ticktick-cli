@@ -36,6 +36,9 @@ type Result struct {
 	// Comments maps taskID → comments. Tasks without comments get an
 	// empty (non-nil) slice.
 	Comments map[string][]api.OpenComment
+	// Bodies holds the original comment arrays for successful requests.
+	Bodies   map[string]json.RawMessage
+	Projects map[string]string
 	// Errors maps taskID → per-task failure. A failure never aborts
 	// the batch; the other tasks are still fetched.
 	Errors map[string]error
@@ -63,6 +66,8 @@ func ClampWorkers(workers int) int {
 func FetchAll(ctx context.Context, client *api.ClientWithResponses, refs []TaskRef, workers int) Result {
 	res := Result{
 		Comments: make(map[string][]api.OpenComment, len(refs)),
+		Bodies:   make(map[string]json.RawMessage, len(refs)),
+		Projects: make(map[string]string, len(refs)),
 		Errors:   make(map[string]error, len(refs)),
 	}
 	// Empty input still yields initialized (non-nil) maps.
@@ -107,15 +112,19 @@ func FetchAll(ctx context.Context, client *api.ClientWithResponses, refs []TaskR
 					continue
 				}
 
-				list, err := fetchOne(ctx, client, ref)
+				list, body, err := FetchOne(ctx, client, ref)
 
 				mu.Lock()
 				if err != nil {
 					delete(res.Comments, ref.TaskID)
+					delete(res.Bodies, ref.TaskID)
+					delete(res.Projects, ref.TaskID)
 					res.Errors[ref.TaskID] = err
 				} else {
 					delete(res.Errors, ref.TaskID)
 					res.Comments[ref.TaskID] = list
+					res.Bodies[ref.TaskID] = body
+					res.Projects[ref.TaskID] = ref.ProjectID
 				}
 				mu.Unlock()
 			}
@@ -132,42 +141,42 @@ func FetchAll(ctx context.Context, client *api.ClientWithResponses, refs []TaskR
 	return res
 }
 
-// fetchOne performs the single-task comments request.
-func fetchOne(ctx context.Context, client *api.ClientWithResponses, ref TaskRef) ([]api.OpenComment, error) {
+// FetchOne returns the typed list and original response body for one task.
+func FetchOne(ctx context.Context, client *api.ClientWithResponses, ref TaskRef) ([]api.OpenComment, json.RawMessage, error) {
 	resp, err := client.GetTaskCommentsWithResponse(ctx, ref.ProjectID, ref.TaskID)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if resp == nil {
-		return nil, fmt.Errorf("empty response")
+		return nil, nil, fmt.Errorf("empty response")
 	}
 	if code := resp.StatusCode(); code < 200 || code >= 300 {
 		// TickTick can echo credentials in authentication error bodies.
 		if code == http.StatusUnauthorized || code == http.StatusForbidden {
-			return nil, fmt.Errorf("HTTP %d: %s", code, http.StatusText(code))
+			return nil, nil, fmt.Errorf("HTTP %d: %s", code, http.StatusText(code))
 		}
-		return nil, fmt.Errorf("HTTP %d: %s", code, bytes.TrimSpace(resp.Body))
+		return nil, nil, fmt.Errorf("HTTP %d: %s", code, bytes.TrimSpace(resp.Body))
 	}
 	if resp.JSON200 != nil {
 		out := *resp.JSON200
 		if out == nil {
-			out = []api.OpenComment{}
+			return []api.OpenComment{}, json.RawMessage("[]"), nil
 		}
-		return out, nil
+		return out, resp.Body, nil
 	}
 
 	// The generated parser only populates JSON200 when the response has a
 	// JSON content type; fall back to decoding the raw body.
 	body := bytes.TrimSpace(resp.Body)
 	if len(body) == 0 || bytes.Equal(body, []byte("null")) {
-		return []api.OpenComment{}, nil
+		return []api.OpenComment{}, json.RawMessage("[]"), nil
 	}
 	var out []api.OpenComment
 	if err := json.Unmarshal(body, &out); err != nil {
-		return nil, fmt.Errorf("decode comments: %w", err)
+		return nil, nil, fmt.Errorf("decode comments: %w", err)
 	}
 	if out == nil {
 		out = []api.OpenComment{}
 	}
-	return out, nil
+	return out, resp.Body, nil
 }

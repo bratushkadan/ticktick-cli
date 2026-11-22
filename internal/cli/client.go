@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -15,21 +16,26 @@ var apiTransport http.RoundTripper
 
 // newClient builds the generated API client with bearer auth over HTTPS.
 func newClient() (*api.ClientWithResponses, error) {
+	client, _, err := newClientWithCacheScope()
+	return client, err
+}
+
+func newClientWithCacheScope() (*api.ClientWithResponses, [32]byte, error) {
 	dir := configDirectory()
 	values, err := loadDotenv(dir)
 	if err != nil {
-		return nil, err
+		return nil, [32]byte{}, err
 	}
 	baseURL := strings.TrimRight(firstValue(flagBaseURL, os.Getenv("TICKTICK_BASE_URL"),
 		values["TICKTICK_BASE_URL"], defaultBaseURL), "/")
 	parsedURL, err := url.Parse(baseURL)
 	if err != nil || parsedURL.Scheme != "https" || parsedURL.Hostname() == "" {
-		return nil, fmt.Errorf("API base URL must be an absolute HTTPS URL")
+		return nil, [32]byte{}, fmt.Errorf("API base URL must be an absolute HTTPS URL")
 	}
 
 	token, err := resolveToken(dir, values)
 	if err != nil {
-		return nil, err
+		return nil, [32]byte{}, err
 	}
 	httpClient := &http.Client{
 		Timeout:   flagTimeout,
@@ -44,7 +50,7 @@ func newClient() (*api.ClientWithResponses, error) {
 			return nil
 		},
 	}
-	return api.NewClientWithResponses(
+	client, err := api.NewClientWithResponses(
 		baseURL,
 		api.WithHTTPClient(httpClient),
 		api.WithRequestEditorFn(func(ctx context.Context, req *http.Request) error {
@@ -52,6 +58,7 @@ func newClient() (*api.ClientWithResponses, error) {
 			return nil
 		}),
 	)
+	return client, sha256.Sum256([]byte(baseURL + "\x00" + token)), err
 }
 
 // APIError is a non-2xx API response.

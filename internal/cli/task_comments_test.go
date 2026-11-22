@@ -1,13 +1,16 @@
 package cli
 
 import (
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"ticktick-cli/api"
 )
@@ -20,6 +23,7 @@ type taskCmtTestServer struct {
 	mu           sync.Mutex
 	addBodies    []string
 	deletedPaths []string
+	gets         map[string]int
 }
 
 // taskCmtNewServer starts the fake API. Responses:
@@ -30,7 +34,7 @@ type taskCmtTestServer struct {
 func taskCmtNewServer(t *testing.T) *taskCmtTestServer {
 	t.Helper()
 
-	s := &taskCmtTestServer{}
+	s := &taskCmtTestServer{gets: make(map[string]int)}
 	handler := func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Authorization"); got != "Bearer test-token" {
 			http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
@@ -55,6 +59,9 @@ func taskCmtNewServer(t *testing.T) *taskCmtTestServer {
 
 		switch {
 		case r.Method == http.MethodGet && len(parts) == 7 && parts[6] == "comments":
+			s.mu.Lock()
+			s.gets[taskID]++
+			s.mu.Unlock()
 			var list []api.OpenComment
 			switch {
 			case projectID == "p1" && taskID == "t1":
@@ -120,9 +127,123 @@ func taskCmtNewServer(t *testing.T) *taskCmtTestServer {
 	return s
 }
 
+func TestTaskCommentsCacheModesAndEviction(t *testing.T) {
+	s := taskCmtSetup(t)
+	t.Cleanup(func() { _ = taskCommentsBatchCmd.Flags().Set("use-cache", "false") })
+	run := func(args ...string) string {
+		t.Helper()
+		return captureOutput(t, func() {
+			if err := runCmd(t, append([]string{"task"}, args...)...); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+	checkGets := func(t1, empty int) {
+		t.Helper()
+		s.mu.Lock()
+		defer s.mu.Unlock()
+		if s.gets["t1"] != t1 || s.gets["empty"] != empty {
+			t.Fatalf("GET counts = %v, want t1=%d empty=%d", s.gets, t1, empty)
+		}
+	}
+	saveTask := func(timestamp string) {
+		t.Helper()
+		var task api.V3BatchTask
+		raw := []byte(`{"id":"t1","projectId":"p1","modifiedTime":"` + timestamp + `"}`)
+		if err := json.Unmarshal(raw, &task); err != nil {
+			t.Fatal(err)
+		}
+		if err := cacheWebTasks(context.Background(), []api.V2Task{task.V2Task}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	dir, err := taskCacheDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	getEntries := func() map[string]cacheRecord {
+		t.Helper()
+		doc, err := readTaskCache(filepath.Join(dir, "cache.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var entries map[string]cacheRecord
+		if err := json.Unmarshal(doc["comments"], &entries); err != nil {
+			t.Fatal(err)
+		}
+		return entries
+	}
+	expireEmpty := func() {
+		t.Helper()
+		err := updateTaskCache(context.Background(), dir, func(_, entries map[string]cacheRecord) (bool, error) {
+			entry := entries["empty"]
+			stale := time.Now().Add(-25 * time.Hour)
+			entry.Metadata.UpdatedAt = &stale
+			entries["empty"] = entry
+			return true, nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	single := []string{"comments", "t1", "--project", "p1", "--json"}
+	all := []string{"comments-batch", "--project", "p1", "--ids", "t1,empty", "--tasks", "", "--json"}
+	onlyT1 := []string{"comments-batch", "--project", "p1", "--ids", "t1", "--tasks", "", "--json"}
+	saveTask("2026-11-21T12:00:00.000+0000")
+	run(single...)
+	checkGets(1, 0)
+	if len(getEntries()) != 0 {
+		t.Fatal("single comments must not write to the cache")
+	}
+	run(all...)
+	run(all...)
+	run(append(all, "--use-cache")...)
+	checkGets(3, 2)
+	if entries := getEntries(); entries["t1"].Metadata.UpdatedAt == nil ||
+		entries["empty"].Metadata.UpdatedAt == nil || string(entries["empty"].Payload) != "[]" {
+		t.Fatal("expected fetched lists with timestamps, including the empty list")
+	}
+
+	expireEmpty()
+	run(append(onlyT1, "--use-cache=false")...)
+	checkGets(4, 2)
+	if !commentCacheExpired(getEntries()["empty"], time.Now()) {
+		t.Fatal("default batch must leave unrelated expired entries alone")
+	}
+	output := run(append(onlyT1, "--use-cache")...)
+	checkGets(4, 3)
+	var result map[string][]api.OpenComment
+	if err := json.Unmarshal([]byte(output), &result); err != nil || len(result) != 1 || len(result["t1"]) != 2 {
+		t.Fatal("output should contain only the requested task")
+	}
+	if commentCacheExpired(getEntries()["empty"], time.Now()) {
+		t.Fatal("expired list must be refreshed by the opt-in batch")
+	}
+
+	saveTask("2026-11-21T12:00:00Z")
+	run(append(onlyT1, "--use-cache")...)
+	checkGets(4, 3)
+	saveTask("2026-11-22T12:00:00Z")
+	run(append(onlyT1, "--use-cache")...)
+	checkGets(5, 3)
+	before := getEntries()["t1"].Metadata.Generation
+	run(single...)
+	checkGets(6, 3)
+	if getEntries()["t1"].Metadata.Generation != before {
+		t.Fatal("single comments must not update an existing cache entry")
+	}
+	run("comment-add", "t1", "--project", "p1", "--text", "new comment")
+	run(append(onlyT1, "--use-cache")...)
+	checkGets(7, 3)
+	run("comment-delete", "t1", "comment-1", "--project", "p1")
+	run(append(onlyT1, "--use-cache")...)
+	checkGets(8, 3)
+}
+
 // taskCmtSetup starts the fake API and points the CLI at it.
 func taskCmtSetup(t *testing.T) *taskCmtTestServer {
 	t.Helper()
+	t.Setenv("HOME", t.TempDir())
 	s := taskCmtNewServer(t)
 	useTestAPIServer(t, s.srv)
 	return s

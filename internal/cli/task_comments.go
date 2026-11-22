@@ -28,6 +28,7 @@ var (
 var taskCommentsCmd = &cobra.Command{
 	Use:   "comments TASK_ID",
 	Short: "List comments on a task",
+	Long:  "List comments on a task directly from the API, without reading or updating the cache.",
 	Args:  cobra.ExactArgs(1),
 	Example: `  ticktick task comments 641a2b3c4d5e6f7890abcdef --project 63f1a2b3c4d5e6f7890abcde
   ticktick task comments 641a2b3c4d5e6f7890abcdef --project 63f1a2b3c4d5e6f7890abcde --json
@@ -48,15 +49,12 @@ although the official docs show strings):
 		if err != nil {
 			return err
 		}
-		resp, err := c.GetTaskCommentsWithResponse(cmd.Context(), taskCmtProject, args[0])
+		ref := comments.TaskRef{ProjectID: taskCmtProject, TaskID: args[0]}
+		list, body, err := comments.FetchOne(cmd.Context(), c, ref)
 		if err != nil {
 			return err
 		}
-		if err := CheckHTTP(resp.StatusCode(), resp.Body); err != nil {
-			return err
-		}
-		list := commentsFromResponse(resp.JSON200, resp.Body)
-		return Render(resp.Body, func(w io.Writer) {
+		return Render(body, func(w io.Writer) {
 			printCommentLines(w, list)
 		})
 	},
@@ -89,6 +87,9 @@ Example API response (live shape; created/modifiedTime are epoch milliseconds):
 		}
 		if err := CheckHTTP(resp.StatusCode(), resp.Body); err != nil {
 			return err
+		}
+		if err := invalidateTaskComments(cmd.Context(), args[0]); err != nil {
+			return fmt.Errorf("comment added on TickTick; could not invalidate cache: %w", err)
 		}
 		var added *api.OpenComment
 		if resp.JSON200 != nil {
@@ -134,6 +135,9 @@ Example API response:
 		if err := CheckHTTP(resp.StatusCode(), resp.Body); err != nil {
 			return err
 		}
+		if err := invalidateTaskComments(cmd.Context(), args[0]); err != nil {
+			return fmt.Errorf("comment deleted on TickTick; could not invalidate cache: %w", err)
+		}
 		return RenderOK("Comment deleted.")
 	},
 }
@@ -151,7 +155,12 @@ The per-task API endpoint returns a plain array of comments; this command
 assembles a taskID → comments map client-side, fetching up to 8 tasks
 concurrently (--workers, default 4, clamped to 1..8). Per-task failures
 are reported per task without aborting the batch; partial results are
-still printed and the exit code is 1.`,
+still printed and the exit code is 1.
+
+By default, each requested task is fetched from the API and successful
+responses are saved to the cache. With --use-cache, fresh lists are reused
+and lists older than 24 hours are refreshed, including for tasks outside
+the requested set. Output contains the requested tasks only.`,
 	Args: cobra.NoArgs,
 	Example: `  # form 1: one project, many task IDs
   ticktick task comments-batch --project 63f1a2b3c4d5e6f7890abcde --ids 641a2b3c4d5e6f7890ab01,641a2b3c4d5e6f7890ab02 --workers 4
@@ -179,66 +188,67 @@ client-side with 1-8 workers. Metadata about failures goes to stderr.`,
 		if err != nil {
 			return err
 		}
-		c, err := newClient()
+		c, scope, err := newClientWithCacheScope()
 		if err != nil {
 			return err
 		}
 
-		res := comments.FetchAll(cmd.Context(), c, refs, taskCmtWorkers)
+		useCache, _ := cmd.Flags().GetBool("use-cache")
+		cache, result, fetch, cacheErr := prepareCommentCache(cmd.Context(), scope, refs, useCache)
+		if cacheErr != nil {
+			result = make(map[string][]api.OpenComment)
+			fetch = refs
+		}
+		fetched := comments.FetchAll(cmd.Context(), c, fetch, taskCmtWorkers)
+		if cacheErr == nil {
+			cacheErr = cache.store(cmd.Context(), fetched.Bodies, fetched.Projects)
+		}
+		failures := make(map[string]error)
+		for _, ref := range refs {
+			if list, ok := fetched.Comments[ref.TaskID]; ok {
+				result[ref.TaskID] = list
+			} else if err := fetched.Errors[ref.TaskID]; err != nil {
+				delete(result, ref.TaskID)
+				failures[ref.TaskID] = err
+			}
+		}
+		if failed := len(fetched.Errors) - len(failures); failed > 0 {
+			fmt.Fprintf(os.Stderr, "%d expired comment cache entries could not be refreshed\n", failed)
+		}
 
 		if flagJSON {
 			// Pure map on stdout: taskID → []comments, nothing else.
-			if err := PrintJSON(res.Comments); err != nil {
+			if err := PrintJSON(result); err != nil {
 				return err
 			}
 		} else {
 			for _, ref := range refs {
-				if e := res.Errors[ref.TaskID]; e != nil {
+				if e := failures[ref.TaskID]; e != nil {
 					fmt.Fprintf(os.Stdout, "task %s — ERROR:\n", ref.TaskID)
 					fmt.Fprintf(os.Stdout, "  ERROR: %v\n", e)
 					continue
 				}
-				list := res.Comments[ref.TaskID]
+				list := result[ref.TaskID]
 				fmt.Fprintf(os.Stdout, "task %s — %d comment(s):\n", ref.TaskID, len(list))
 				printCommentLines(os.Stdout, list)
 			}
 		}
 
-		if len(res.Errors) > 0 {
+		if len(failures) > 0 {
 			// Per-task diagnostics always go to stderr; the partial result
 			// (map or text) has already been printed above.
 			for _, ref := range refs {
-				if e := res.Errors[ref.TaskID]; e != nil {
+				if e := failures[ref.TaskID]; e != nil {
 					fmt.Fprintf(os.Stderr, "task %s: %v\n", ref.TaskID, e)
 				}
 			}
-			return fmt.Errorf("%d of %d tasks failed", len(res.Errors), len(refs))
+			return fmt.Errorf("%d of %d tasks failed", len(failures), len(refs))
+		}
+		if cacheErr != nil {
+			return fmt.Errorf("update comments cache: %w", cacheErr)
 		}
 		return nil
 	},
-}
-
-// commentsFromResponse returns the decoded comment list, preferring the
-// generated JSON200 decode and falling back to decoding the raw body
-// (the generated parser only fills JSON200 for JSON content types).
-// The result is never nil.
-func commentsFromResponse(decoded *[]api.OpenComment, body []byte) []api.OpenComment {
-	if decoded != nil {
-		if *decoded == nil {
-			return []api.OpenComment{}
-		}
-		return *decoded
-	}
-	var out []api.OpenComment
-	if b := bytes.TrimSpace(body); len(b) > 0 && !bytes.Equal(b, []byte("null")) {
-		if err := json.Unmarshal(b, &out); err != nil {
-			return []api.OpenComment{}
-		}
-	}
-	if out == nil {
-		out = []api.OpenComment{}
-	}
-	return out
 }
 
 // printCommentLines writes one line per comment, or "(no comments)".
@@ -326,4 +336,5 @@ func init() {
 	taskCommentsBatchCmd.Flags().StringVar(&taskCmtIDs, "ids", "", "comma-separated task IDs (form 1, requires --project)")
 	taskCommentsBatchCmd.Flags().StringVar(&taskCmtTasks, "tasks", "", "comma-separated PROJECT_ID:TASK_ID pairs (form 2)")
 	taskCommentsBatchCmd.Flags().IntVar(&taskCmtWorkers, "workers", comments.DefaultWorkers, "concurrent workers, clamped to 1-8")
+	taskCommentsBatchCmd.Flags().Bool("use-cache", false, "reuse fresh cached lists and refresh expired entries")
 }

@@ -1,8 +1,8 @@
 // Package cli implements the ticktick command-line interface.
 //
-// Output contract (applies to EVERY command):
+// Output contract:
 //   - default: compact human-readable text on stdout;
-//   - --json:  raw API response JSON (pretty-printed) on stdout;
+//   - --json:  pretty-printed JSON on stdout;
 //   - errors:  stderr, exit code 1.
 package cli
 
@@ -28,7 +28,7 @@ const version = "1.1.0"
 
 var rootCmd = &cobra.Command{
 	Use:   "ticktick",
-	Short: "TickTick Open API CLI — fast, scriptable, full API coverage",
+	Short: "CLI for the TickTick Open API and v2 web API",
 	Long: `ticktick — CLI for the TickTick Open API (https://developer.ticktick.com/docs#/openapi).
 
 Covers all business entities: tasks (incl. comments, batch ops, filters, search),
@@ -36,14 +36,16 @@ projects, project groups, columns, tags, focus sessions, countdowns, habits.
 
 OUTPUT
   Default output is compact human-readable text.
-  Every command accepts --json to print the raw API response as JSON
-  (pretty-printed, stdout) — designed for scripts and AI skills.
+  Every command accepts --json to print JSON on stdout.
+  Open API commands print the API response. The v2 and v3 commands print de-identified data.
 
 AUTHENTICATION
   Token resolution order: --token > environment > dotenv > ~/.config/ticktick/token.
   The environment and dotenv accept TICKTICK_TOKEN, then TICKTICK_MCP_TOKEN.
   Dotenv defaults to ~/.config/ticktick/.env; override it with --env-file.
   Create a personal token: TickTick web app > Settings > Account > API Token.
+  The v2 and v3 commands read TICKTICK_V2_API_COOKIE from the environment or ~/.env.
+  Use --env-file to specify a different file.
 
 ENVIRONMENT
   TICKTICK_TOKEN     API token
@@ -68,11 +70,11 @@ func Execute() {
 
 func init() {
 	rootCmd.PersistentFlags().BoolVar(&flagJSON, "json", false,
-		"print raw API response as JSON (works with every command)")
+		"print JSON (v2 and v3 commands de-identify response data)")
 	rootCmd.PersistentFlags().StringVar(&flagToken, "token", "",
 		"API token (overrides environment and config files)")
 	rootCmd.PersistentFlags().StringVar(&flagEnvFile, "env-file", "",
-		"TickTick dotenv file (default ~/.config/ticktick/.env)")
+		"TickTick dotenv file (Open API: ~/.config/ticktick/.env, v2 and v3: ~/.env)")
 	rootCmd.PersistentFlags().StringVar(&flagBaseURL, "base-url", "",
 		"HTTPS API base URL (overrides TICKTICK_BASE_URL from environment and dotenv)")
 	rootCmd.PersistentFlags().DurationVar(&flagTimeout, "timeout", 30*time.Second,

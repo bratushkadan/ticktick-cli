@@ -21,7 +21,7 @@ import focus
 UTC = timezone.utc
 DEFAULT_PROJECT = "69f71ec926b4e22bb727ca29"
 DEFAULT_HABIT_DAYS = 14
-API_LIMIT = 200
+HISTORY_PAGE_SIZE = 2000
 MINIMUM_CLI_VERSION = (1, 1, 0)
 
 
@@ -52,9 +52,12 @@ def skill_checkout():
 
 
 class TickTick:
-    def __init__(self, cli, env_file):
+    def __init__(self, cli, env_file, checkout):
         self.cli = cli
-        self.env_flags = ["--env-file", str(env_file)] if env_file is not None else []
+        self.env_file = env_file
+        self.open_env_file = env_file
+        if env_file is None and checkout is not None and (checkout / ".env").is_file():
+            self.open_env_file = checkout / ".env"
 
     def check_version(self):
         process = subprocess.run([self.cli, "version", "--json"], capture_output=True, text=True)
@@ -78,8 +81,10 @@ class TickTick:
         )
 
     def run(self, *args):
+        env_file = self.env_file if args[0] in ("v2", "v3") else self.open_env_file
+        env_flags = ["--env-file", str(env_file)] if env_file is not None else []
         return subprocess.run(
-            [self.cli, *args, *self.env_flags, "--json"], capture_output=True, text=True,
+            [self.cli, *args, *env_flags, "--json"], capture_output=True, text=True,
         )
 
     def read(self, *args):
@@ -89,45 +94,52 @@ class TickTick:
             raise RuntimeError(error or f"TickTick exited with code {process.returncode}")
         return json.loads(process.stdout)
 
-    def completed(self, project, start, end, warnings):
-        rows = self.read(
-            "task", "completed", "--projects", project,
-            "--start", start.isoformat(), "--end", end.isoformat(),
-        ) or []
-        if len(rows) >= API_LIMIT:
-            seconds = int((end - start).total_seconds())
-            if seconds > 1:
-                middle = start + timedelta(seconds=seconds // 2)
-                return (self.completed(project, start, middle, warnings)
-                        + self.completed(project, middle, end, warnings))
-            warnings.append(f"Проект {project}: достигнут лимит выдачи выполненных задач.")
-        result = []
-        for task in rows:
-            completed_at = stamp(task.get("completedTime"))
-            if completed_at is None:
-                warnings.append(f"Проект {project}: есть выполненные задачи без даты выполнения.")
-            elif start <= completed_at < end:
-                result.append(task)
-        return result
+    def check_summary_cli(self):
+        for command in (("v2", "completed"), ("v3", "active")):
+            help_page = self.run(*command, "--help")
+            if help_page.returncode or "--cache-ids" not in help_page.stdout:
+                raise RuntimeError(
+                    f"{self.cli}: summary requires {' '.join(command)} --cache-ids; "
+                    "run make build in ticktick-cli or select an updated executable with --cli."
+                )
 
-    def project_tasks(self, project, name, start, end, history_end):
+    def task_snapshot(self):
+        # History is ordered by completedTime. Old tasks can have new comments.
+        ids = {}
         warnings = []
-        data = self.read("project", "data", project)
-        completed = []
-        open_tasks = [task for task in data.get("tasks") or [] if task.get("status", 0) == 0]
-        for task in self.completed(project, start, history_end, warnings):
-            if stamp(task["completedTime"]) < end:
-                completed.append(task)
-            else:
-                open_tasks.append(task)
-        abandoned = self.read("task", "filter", "--projects", project, "--status=-1") or []
-        if len(abandoned) >= API_LIMIT:
-            warnings.append(f"Проект {name}: выдача отменённых задач достигла лимита {API_LIMIT}.")
-        tasks = {
-            "completed": completed,
-            "open": open_tasks,
-            "abandoned": abandoned,
-        }
+        cursor = None
+        try:
+            while True:
+                bounds = ("--to", cursor) if cursor else ()
+                page = self.read("v2", "completed", "--cache-ids", "--limit",
+                                 str(HISTORY_PAGE_SIZE), *bounds)
+                rows = page["tasks"]
+                ids.update((task["id"], None) for task in rows)
+                if len(rows) < HISTORY_PAGE_SIZE:
+                    break
+                next_cursor = page.get("nextTo")
+                if not next_cursor or (cursor is not None and next_cursor > cursor):
+                    warnings.append("TickTick не вернул следующую страницу истории закрытий.")
+                    break
+                if next_cursor == cursor:
+                    warnings.append(f"История закрытий могла быть усечена на границе {cursor} UTC.")
+                    next_cursor = (datetime.fromisoformat(cursor) - timedelta(seconds=1)).isoformat(sep=" ")
+                cursor = next_cursor
+        except (RuntimeError, OSError, ValueError, KeyError) as error:
+            warnings.append(f"Не удалось загрузить всю историю закрытий: {error}")
+        try:
+            active = self.read("v3", "active", "--cache-ids")
+            ids.update((task["id"], None) for task in active)
+        except (RuntimeError, OSError, ValueError, KeyError) as error:
+            warnings.append(f"Не удалось загрузить активные задачи: {error}")
+        if not ids:
+            return [], warnings
+        path = Path.home() / ".config/ticktick/cache/cache.json"
+        with path.open(encoding="utf-8") as file:
+            entries = json.load(file)["tasks"]
+        tasks = [entries[task_id]["payload"] for task_id in ids if task_id in entries]
+        if len(tasks) != len(ids):
+            warnings.append(f"В кэше отсутствует {len(ids) - len(tasks)} задач из ответов TickTick.")
         return tasks, warnings
 
     def comments(self, projects, workers):
@@ -140,7 +152,7 @@ class TickTick:
                 try:
                     process = self.run(
                         "task", "comments-batch", "--tasks", ",".join(pending),
-                        "--workers", str(workers),
+                        "--workers", str(workers), "--use-cache",
                     )
                     result = json.loads(process.stdout or "{}")
                 except (RuntimeError, OSError, ValueError):
@@ -173,33 +185,48 @@ def select_projects(client, selection):
     return names, list(dict.fromkeys(projects))
 
 
-def collect(client, selection, start, end, history_end, zone, workers, focus_future):
+def collect(client, selection, start, end, zone, workers, focus_future):
     names, projects = select_projects(client, selection)
-
-    def read_project(project):
-        try:
-            return client.project_tasks(project, names[project], start, end, history_end)
-        except (RuntimeError, OSError, ValueError, KeyError) as error:
-            return {}, [f"Не удалось загрузить задачи проекта «{names[project]}»: {error}"]
-
+    allowed = set(projects) if selection else None
+    tasks, warnings = client.task_snapshot()
     candidates = {}
+    comment_projects = {}
     aliases = {}
-    warnings = []
-    with ThreadPoolExecutor(max_workers=min(4, len(projects))) as pool:
-        for project, (tasks, issues) in zip(projects, pool.map(read_project, projects)):
-            warnings.extend(issues)
-            for status, rows in tasks.items():
-                for task in rows:
-                    if task.get("projectId") and project == "inbox":
-                        aliases[task["projectId"]] = project
-                    created = stamp(task.get("createdTime"))
-                    if status == "completed" or created is None or created < end:
-                        candidates.setdefault(task["id"], (project, status, task))
-
-    comments, failures = client.comments(
-        {task_id: task.get("projectId") or project
-         for task_id, (project, _, task) in candidates.items()}, workers,
-    )
+    missing_completion = 0
+    for task in tasks:
+        code = task["status"]
+        if task.get("deleted") or code not in (-1, 0, 1, 2):
+            continue
+        source_project = task.get("projectId") or "inbox"
+        project = "inbox" if source_project.startswith("inbox") else source_project
+        if allowed is not None and project not in allowed:
+            continue
+        aliases[source_project] = project
+        completed = stamp(task.get("completedTime")) if code != 0 else None
+        closed_in_period = completed is not None and start <= completed < end
+        if code in (1, 2) and completed is None:
+            missing_completion += 1
+        status = "abandoned" if code == -1 else "open"
+        if code in (1, 2) and closed_in_period:
+            status = "completed"
+        created = stamp(task.get("createdTime"))
+        if not closed_in_period and created is not None and created >= end:
+            continue
+        modified = stamp(task.get("modifiedTime"))
+        # A later edit may supersede a change within the reporting period.
+        needs_comments = task.get("commentCount") != 0 and (
+            closed_in_period or modified is None or modified >= start
+        )
+        if project not in names:
+            names[project] = "Проект без названия"
+            projects.append(project)
+        task_id = task["id"]
+        candidates[task_id] = (project, status, task)
+        if needs_comments:
+            comment_projects[task_id] = source_project
+    if missing_completion:
+        warnings.append(f"Дата выполнения отсутствует у {missing_completion} задач.")
+    comments, failures = client.comments(comment_projects, workers)
     if failures:
         warnings.append(f"Не удалось загрузить комментарии к {failures} задачам.")
 
@@ -209,26 +236,33 @@ def collect(client, selection, start, end, history_end, zone, workers, focus_fut
     sessions, focus_complete, focus_warnings = focus_future.result()
     warnings.extend(focus_warnings)
     by_project, by_task, focused_tasks, unassigned = focus.summarize(
-        sessions, start, end, names, candidates, aliases, set(projects) if selection else None,
+        sessions, start, end, names, candidates, aliases, allowed,
     )
     groups = {"completed": [], "open": [], "abandoned": [], "focus_only": []}
     included = set()
     for task_id, (project, status, task) in candidates.items():
-        event = stamp(task.get("completedTime")) if status != "open" else None
+        event = stamp(task.get("completedTime")) if task["status"] != 0 else None
         event_in_period = event is not None and start <= event < end
         include_earlier = status == "completed" or (status == "abandoned" and event_in_period)
         evidence = []
         for comment in comments.get(task_id, []):
             created = stamp(comment.get("createdTime"))
+            modified = stamp(comment.get("modifiedTime"))
             body = (comment.get("title") or "").strip()
-            if body and created is not None and created < end and (include_earlier or created >= start):
+            if not body or created is None or created >= end:
+                continue
+            if created >= start:
+                evidence.append((created, body))
+            elif modified is not None and start <= modified < end:
+                evidence.append((modified, body))
+            elif include_earlier:
                 evidence.append((created, body))
         if status != "completed" and not evidence:
             continue
         record = {"project": names[project], "title": task["title"],
                   "focus_seconds": by_task[task_id]}
         if event is not None:
-            record["completed_at" if status == "completed" else "abandoned_at"] = local(event)
+            record["abandoned_at" if status == "abandoned" else "completed_at"] = local(event)
         if status == "completed":
             description = dict.fromkeys(
                 body for field in ("content", "desc")
@@ -340,8 +374,7 @@ def collect_summary(client, projects, start, end, today, zone, workers,
         focus_future = pool.submit(load_focus, client, focus_start, min(end, today_end))
         if habit_through is not None:
             habit_future = pool.submit(collect_habits, client, habit_since, habit_through, today, zone)
-        # Fetch through today to find comments from the period on tasks completed later.
-        output = collect(client, projects, start, end, max(end, today_end), zone, workers, focus_future)
+        output = collect(client, projects, start, end, zone, workers, focus_future)
         if habit_through is not None:
             try:
                 report = habit_future.result()
@@ -376,7 +409,7 @@ def main():
     parser.add_argument("--cli", default=os.environ.get("TICKTICK_CLI"),
                         help="TickTick CLI 1.1.0+ (default: checkout binary, then PATH)")
     parser.add_argument("--env-file", type=Path,
-                        help="TickTick dotenv file (default: checkout .env, then ~/.config/ticktick/.env)")
+                        help="TickTick dotenv file for both APIs (default: Open API config or checkout .env; web API ~/.env)")
     parser.add_argument("--workers", type=int, choices=range(1, 9), default=8)
     args = parser.parse_args()
     if args.habit_days < 1:
@@ -399,20 +432,18 @@ def main():
         cli = local or shutil.which("ticktick")
     if cli is None:
         parser.error("ticktick executable not found; use --cli or TICKTICK_CLI")
-    env_file = args.env_file
-    if env_file is None and checkout is not None and (checkout / ".env").is_file():
-        env_file = checkout / ".env"
     today = datetime.now(zone).date()
     if args.mode == "habits" and args.date is not None and args.date > today:
         parser.error("habit review end date cannot be in the future")
     try:
-        client = TickTick(cli, env_file)
+        client = TickTick(cli, args.env_file, checkout)
         client.check_version()
         if args.mode == "habits":
             through = args.date or today - timedelta(days=1)
             since = habit_start_date(through, args.habit_days, args.habit_from)
             output = collect_habits(client, since, through, today, zone)
         else:
+            client.check_summary_cli()
             start, end = period(args.mode, args.date or today, zone)
             output = collect_summary(client, projects, start, end, today, zone, args.workers,
                                      args.habit_days, args.habit_from)
