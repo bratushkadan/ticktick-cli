@@ -271,7 +271,7 @@ func taskCrudPrintChecklist(w io.Writer, t api.Task) {
 	fmt.Fprintln(w, "Checklist:")
 	for _, it := range items {
 		mark := " "
-		if I32(it.Status) == 1 {
+		if taskStatusSlug(int(I32(it.Status)), true) == "completed_subtask" {
 			mark = "x"
 		}
 		fmt.Fprintf(w, "  [%s] %s\n", mark, Str(it.Title))
@@ -322,7 +322,7 @@ Example API response:
 		if err != nil {
 			return err
 		}
-		return Render(resp.Body, func(w io.Writer) {
+		return renderTasks(resp.Body, func(w io.Writer) {
 			taskCrudPrintTask(w, task)
 		})
 	},
@@ -384,7 +384,7 @@ Example API response:
 		if task.ProjectId == nil {
 			task.ProjectId = Ptr(req.ProjectId)
 		}
-		return Render(resp.Body, func(w io.Writer) {
+		return renderTasks(resp.Body, func(w io.Writer) {
 			fmt.Fprintf(w, "Created task %s: %s\n", taskCrudID(Str(task.Id)), Str(task.Title))
 			taskCrudPrintTaskDetails(w, task)
 		})
@@ -447,7 +447,7 @@ Example API response:
 		if task.Title == nil {
 			task.Title = req.Title
 		}
-		return Render(resp.Body, func(w io.Writer) {
+		return renderTasks(resp.Body, func(w io.Writer) {
 			fmt.Fprintf(w, "Updated task %s: %s\n", taskCrudID(Str(task.Id)), Str(task.Title))
 			taskCrudPrintTaskDetails(w, task)
 		})

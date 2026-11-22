@@ -22,6 +22,9 @@ func newV3Cmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if _, err := checkTaskCache(); err != nil {
+				return err
+			}
 			client, output, err := newV2CLIClient()
 			if err != nil {
 				return err
@@ -49,7 +52,7 @@ func newV3Cmd() *cobra.Command {
 					active = append(active, task.V2Task)
 				}
 			}
-			if err := cacheWebTasks(cmd.Context(), active); err != nil {
+			if err := cacheTaskPage(cmd, active); err != nil {
 				return err
 			}
 			safe := output.cachedTasks(active, cacheIDs)

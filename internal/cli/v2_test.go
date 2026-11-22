@@ -34,6 +34,7 @@ func TestV2Commands(t *testing.T) {
 	tests := []struct {
 		name string
 		args []string
+		host string
 		path string
 		q    url.Values
 		body string
@@ -103,6 +104,26 @@ func TestV2Commands(t *testing.T) {
 			path: focusPath + "generalForDesktop", res: `{"todayPomoCount":42}`, want: `"todayPomoCount": 42`,
 		},
 		{
+			name: "habit schedules", args: []string{"habits"}, host: "api.ticktick.com", path: "/api/v2/habits",
+			res:  `[{"id":"private-habit","name":"private-name","sectionId":"private-section","status":0,"repeatRule":"RRULE:FREQ=WEEKLY;TT_TIMES=3","archivedTime":"2026-11-01T03:00:00+0300","targetStartDate":20261101,"exDates":["20261110","private-date"]},{"repeatRule":"RRULE:FREQ=DAILY;PRIVATE=private-text","createdTime":"private-date"}]`,
+			want: `"repeatRule": "RRULE:FREQ=WEEKLY;TT_TIMES=3"`,
+		},
+		{
+			name: "habit sections", args: []string{"habit-sections"}, host: "api.ticktick.com", path: "/api/v2/habitSections",
+			res: `[{"id":"private-section","name":"private-name","sortOrder":42,"etag":"private-etag"}]`, want: `"sortOrder": 42`,
+		},
+		{
+			name: "habit records without bound", args: []string{"habit-records", "--ids", "h1,h2"}, host: "api.ticktick.com",
+			path: "/api/v2/getHabitRecords", body: `{"habitIds":["h1","h2"]}`,
+			res: `{"habitRecords":{"private-habit":[]}}`, want: `"habitRecords"`,
+		},
+		{
+			name: "habit records with bound", args: []string{"habit-records", "--ids", "h1", "--ids", "h2", "--after", "2026-11-20"}, host: "api.ticktick.com",
+			path: "/api/v2/getHabitRecords", body: `{"habitIds":["h1","h2"],"afterStamp":20261120}`,
+			res:  `{"habitRecords":{"private-habit":[{"id":"private-entry","habitId":"private-habit","stamp":20261121,"opTime":"2026-11-21T10:30:00+0300","content":"private-note","emoji":6,"unknown":"private-field"}]}}`,
+			want: `"opTime": "2026-11-21T07:30:00Z"`,
+		},
+		{
 			name: "habit checkins without bound",
 			args: []string{"habit-checkins", "--ids", "h1,h2"}, path: "/api/v2/habitCheckins/query",
 			body: `{"habitIds":["h1","h2"]}`, res: `{"checkins":{"private-habit":[]}}`, want: "anon-",
@@ -118,9 +139,13 @@ func TestV2Commands(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			requests := 0
+			host := tt.host
+			if host == "" {
+				host = "ticktick.com"
+			}
 			apiTransport = v2TestTransport(func(req *http.Request) (*http.Response, error) {
 				requests++
-				if req.URL.Scheme != "https" || req.URL.Host != "ticktick.com" || req.URL.EscapedPath() != tt.path {
+				if req.URL.Scheme != "https" || req.URL.Host != host || req.URL.EscapedPath() != tt.path {
 					t.Errorf("unexpected URL %s", req.URL)
 				}
 				if q := req.URL.Query(); !reflect.DeepEqual(q, tt.q) && (len(q) != 0 || len(tt.q) != 0) {
@@ -159,6 +184,9 @@ func TestV2Commands(t *testing.T) {
 				if asJSON && (!json.Valid([]byte(output)) || !strings.Contains(output, tt.want)) {
 					t.Errorf("JSON %q did not contain %q", output, tt.want)
 				}
+				if strings.Contains(output, `"emoji"`) {
+					t.Error("output exposed a journal emoji")
+				}
 			}
 			wantRequests := 0
 			if tt.path != "" {
@@ -192,6 +220,35 @@ func TestV2ErrorsSuppressResponseBodyAndRedirect(t *testing.T) {
 		err := cmd.Execute()
 		if err == nil || strings.Contains(err.Error(), "private-") || requests != 1 {
 			t.Errorf("HTTP %d: unexpected error or redirect, requests = %d", code, requests)
+		}
+		cmd = newV2Cmd()
+		cmd.SilenceErrors, cmd.SilenceUsage = true, true
+		cmd.SetArgs([]string{"habit-records", "--ids", "h1"})
+		err = cmd.Execute()
+		if err == nil || strings.Contains(err.Error(), "private-") || requests != 2 {
+			t.Errorf("HTTP %d: unexpected habit record error or redirect, requests = %d", code, requests)
+		}
+	}
+}
+
+func TestV2HabitRecordsRejectsInvalidQuery(t *testing.T) {
+	t.Setenv(v2CookieKey, "private-cookie")
+	oldTransport := apiTransport
+	t.Cleanup(func() { apiTransport = oldTransport })
+	apiTransport = v2TestTransport(func(req *http.Request) (*http.Response, error) {
+		t.Fatalf("invalid query made a request to %s", req.URL.Path)
+		return nil, nil
+	})
+	for _, args := range [][]string{
+		{"habit-records"},
+		{"habit-records", "--ids", ","},
+		{"habit-records", "--ids", "h1", "--after", "2026-02-30"},
+	} {
+		cmd := newV2Cmd()
+		cmd.SilenceErrors, cmd.SilenceUsage = true, true
+		cmd.SetArgs(args)
+		if err := cmd.Execute(); err == nil {
+			t.Errorf("invalid arguments accepted: %v", args)
 		}
 	}
 }

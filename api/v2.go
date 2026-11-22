@@ -129,6 +129,7 @@ type V2Task struct {
 	ID            string   `json:"id"`
 	ProjectID     string   `json:"projectId,omitempty"`
 	Status        int      `json:"status"`
+	StatusSlug    string   `json:"status_slug,omitempty"`
 	Priority      int      `json:"priority"`
 	Kind          string   `json:"kind,omitempty"`
 	DueDate       string   `json:"dueDate,omitempty"`

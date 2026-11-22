@@ -64,11 +64,16 @@ func TestWebCommandsPopulateTaskCache(t *testing.T) {
 		if strings.Contains(output, "private-") || strings.Contains(output, "task-active") || !strings.Contains(output, "anon-") {
 			t.Error("output should use pseudonyms and omit private fields")
 		}
+		slug := "completed"
 		if args[0] == "v3" {
+			slug = "open"
 			var tasks []api.V2Task
 			if err := json.Unmarshal([]byte(output), &tasks); err != nil || len(tasks) != 1 {
 				t.Fatal("expected one active task in the output")
 			}
+		}
+		if !strings.Contains(output, `"status_slug": "`+slug+`"`) {
+			t.Errorf("expected status_slug %q in %s", slug, output)
 		}
 	}
 

@@ -16,21 +16,33 @@ def query_windows(start, end):
 def read_sessions(client, start, end, stamp, warnings):
     sessions = []
     seen = set()
-    complete = True
+    received = 0
     invalid = 0
     for kind in (0, 1):
         records = []
         for since, through in query_windows(start, end):
             try:
-                records.extend(client.read(
+                rows = client.read(
                     "focus", "list", "--type", str(kind),
                     "--from", since.isoformat(), "--to", through.isoformat(),
-                ) or [])
-            except (RuntimeError, OSError, ValueError) as error:
-                warnings.append(f"Не удалось загрузить фокус типа {kind} за {since.date()}–{through.date()}: {error}")
-                complete = False
+                )
+                if not isinstance(rows, list):
+                    raise ValueError("focus response must be an array")
+                records.extend(rows)
+                received += 1
+            except (RuntimeError, OSError, ValueError, TypeError, KeyError) as error:
+                warnings.append({
+                    "code": "focus_fetch_failed", "type": kind,
+                    "from": since.isoformat(), "to": through.isoformat(),
+                    "message": f"Не удалось загрузить фокус типа {kind} за {since.date()}–{through.date()}: {error}",
+                })
         for record in records:
-            identifier = record.get("id") or json.dumps(record, sort_keys=True)
+            if not isinstance(record, dict):
+                invalid += 1
+                continue
+            identifier = record.get("id")
+            if not isinstance(identifier, str) or not identifier:
+                identifier = json.dumps(record, sort_keys=True)
             key = (kind, identifier)
             if key in seen:
                 continue
@@ -65,13 +77,16 @@ def read_sessions(client, start, end, stamp, warnings):
                         else:
                             continue
                     links.append((segment, max(begins, left), min(ends, right)))
-            except (ValueError, TypeError, OverflowError):
+            except (ValueError, TypeError, OverflowError, AttributeError):
                 invalid += 1
                 continue
             sessions.append((begins, ends, duration / elapsed, links))
     if invalid:
-        warnings.append(f"Пропущено сессий фокуса с некорректными временем или длительностью: {invalid}.")
-    return sessions, complete and not invalid
+        warnings.append({
+            "code": "focus_invalid_records", "missing": invalid,
+            "message": f"Пропущено сессий фокуса с некорректными данными: {invalid}.",
+        })
+    return sessions, "complete" if not warnings else "partial" if received else "unavailable"
 
 
 def overlap_seconds(begins, ends, start, end):
@@ -111,7 +126,8 @@ def summarize(sessions, start, end, names, candidates, aliases, scope):
             project = candidate[0]
         if project not in names:
             matches = by_name.get(link.get("projectName"), [])
-            project = matches[0] if len(matches) == 1 else None
+            if len(matches) == 1:
+                project = matches[0]
         if project is None:
             unassigned += seconds
         else:

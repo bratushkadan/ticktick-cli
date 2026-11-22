@@ -17,18 +17,20 @@ import (
 
 // Global persistent flags. Declared here, registered in init().
 var (
-	flagJSON    bool
-	flagToken   string
-	flagEnvFile string
-	flagBaseURL string
-	flagTimeout time.Duration
+	flagJSON     bool
+	flagToken    string
+	flagEnvFile  string
+	flagBaseURL  string
+	flagTimeout  time.Duration
+	flagCacheDir string
 )
 
 const version = "1.1.0"
 
 var rootCmd = &cobra.Command{
-	Use:   "ticktick",
-	Short: "CLI for the TickTick Open API and v2 web API",
+	Use:     "ticktick",
+	Version: version,
+	Short:   "CLI for the TickTick Open API and v2 web API",
 	Long: `ticktick — CLI for the TickTick Open API (https://developer.ticktick.com/docs#/openapi).
 
 Covers all business entities: tasks (incl. comments, batch ops, filters, search),
@@ -37,7 +39,8 @@ projects, project groups, columns, tags, focus sessions, countdowns, habits.
 OUTPUT
   Default output is compact human-readable text.
   Every command accepts --json to print JSON on stdout.
-  Open API commands print the API response. The v2 and v3 commands print de-identified data.
+  Open API commands print API fields. Task records include status_slug.
+  The v2 and v3 commands print de-identified data.
 
 AUTHENTICATION
   Token resolution order: --token > environment > dotenv > ~/.config/ticktick/token.
@@ -51,6 +54,7 @@ ENVIRONMENT
   TICKTICK_TOKEN     API token
   TICKTICK_MCP_TOKEN  Fall-back API token (also used by TickTick MCP)
   TICKTICK_BASE_URL  HTTPS API base URL (default https://api.ticktick.com)
+  TICKTICK_CACHE_DIR  Local task and comment cache directory
 
 EXAMPLES
   ticktick project list
@@ -79,8 +83,10 @@ func init() {
 		"HTTPS API base URL (overrides TICKTICK_BASE_URL from environment and dotenv)")
 	rootCmd.PersistentFlags().DurationVar(&flagTimeout, "timeout", 30*time.Second,
 		"HTTP request timeout")
+	rootCmd.PersistentFlags().StringVar(&flagCacheDir, "cache-dir", "",
+		"local task and comment cache directory (default: TICKTICK_CACHE_DIR or ~/.config/ticktick/cache)")
 
-	rootCmd.AddCommand(versionCmd)
+	rootCmd.AddCommand(versionCmd, newAuthStatusCmd(), newCacheCmd())
 }
 
 var versionCmd = &cobra.Command{

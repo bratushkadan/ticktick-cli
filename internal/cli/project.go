@@ -179,7 +179,7 @@ Example API response:
 		if err := CheckHTTP(resp.StatusCode(), resp.Body); err != nil {
 			return err
 		}
-		return Render(resp.Body, func(w io.Writer) {
+		return renderTasks(resp.Body, func(w io.Writer) {
 			data := api.ProjectData{}
 			if resp.JSON200 != nil {
 				data = *resp.JSON200

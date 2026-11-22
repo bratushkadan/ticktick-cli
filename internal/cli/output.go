@@ -99,16 +99,10 @@ func PriorityName(p int) string {
 
 // TaskStatusName maps TickTick task status codes to labels.
 func TaskStatusName(s int) string {
-	switch s {
-	case -1:
-		return "abandoned"
-	case 0:
-		return "open"
-	case 2:
-		return "completed"
-	default:
-		return fmt.Sprintf("s%d", s)
+	if slug := taskStatusSlug(s, false); slug != "unknown" {
+		return slug
 	}
+	return fmt.Sprintf("s%d", s)
 }
 
 // TaskRow builds the standard table row for a task.

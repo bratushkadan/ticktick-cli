@@ -146,7 +146,7 @@ Example API response:
 		if err := CheckHTTP(resp.StatusCode(), resp.Body); err != nil {
 			return err
 		}
-		return Render(resp.Body, func(w io.Writer) {
+		return renderTasks(resp.Body, func(w io.Writer) {
 			if resp.JSON200 != nil {
 				PrintTaskTable(w, *resp.JSON200)
 			}
@@ -236,7 +236,7 @@ Example API response:
 		if err := CheckHTTP(resp.StatusCode(), resp.Body); err != nil {
 			return err
 		}
-		return Render(resp.Body, func(w io.Writer) {
+		return renderTasks(resp.Body, func(w io.Writer) {
 			if resp.JSON200 != nil {
 				PrintTaskTable(w, *resp.JSON200)
 			}
@@ -307,7 +307,7 @@ Example API response:
 		if err := CheckHTTP(resp.StatusCode(), resp.Body); err != nil {
 			return err
 		}
-		return Render(resp.Body, func(w io.Writer) {
+		return renderTasks(resp.Body, func(w io.Writer) {
 			if resp.JSON200 != nil {
 				PrintTaskTable(w, *resp.JSON200)
 			}
@@ -381,7 +381,7 @@ Example API response:
 		if err := CheckHTTP(resp.StatusCode(), resp.Body); err != nil {
 			return err
 		}
-		return Render(resp.Body, func(w io.Writer) {
+		return renderTasks(resp.Body, func(w io.Writer) {
 			if resp.JSON200 != nil {
 				PrintTaskTable(w, *resp.JSON200)
 			}

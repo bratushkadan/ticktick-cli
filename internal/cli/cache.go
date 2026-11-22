@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gofrs/flock"
+	"github.com/spf13/cobra"
 
 	"ticktick-cli/api"
 )
@@ -28,24 +29,117 @@ type cacheRecord struct {
 	Metadata cacheMetadata   `json:"metadata"`
 }
 
+var errInvalidTaskResponse = errors.New("task response is missing an ID or original data")
+
 // cacheWebTasks persists each successful web API task response, even an empty one.
 func cacheWebTasks(ctx context.Context, records []api.V2Task) error {
 	dir, err := taskCacheDir()
 	if err != nil {
-		return err
+		return fmt.Errorf("cache_write_failed: %w", err)
 	}
 	if err := mergeCachedTasks(ctx, dir, records); err != nil {
-		return fmt.Errorf("update TickTick task cache: %w", err)
+		if errors.Is(err, errInvalidTaskResponse) {
+			return err
+		}
+		return fmt.Errorf("cache_write_failed: %w", err)
 	}
 	return nil
 }
 
 func taskCacheDir() (string, error) {
+	if dir := cacheDirOverride(); dir != "" {
+		return filepath.Abs(dir)
+	}
 	dir := configDirectory()
 	if dir == "" {
 		return "", errors.New("could not locate TickTick cache directory")
 	}
 	return filepath.Join(dir, "cache"), nil
+}
+
+func cacheDirOverride() string {
+	return firstValue(flagCacheDir, os.Getenv("TICKTICK_CACHE_DIR"))
+}
+
+func newCacheCmd() *cobra.Command {
+	cmd := &cobra.Command{Use: "cache", Short: "Inspect the local task and comment cache"}
+	cmd.AddCommand(&cobra.Command{
+		Use:   "check",
+		Short: "Check that the cache is usable without contacting TickTick",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			dir, err := checkTaskCache()
+			if err != nil {
+				return err
+			}
+			if err := updateTaskCache(cmd.Context(), dir, func(map[string]cacheRecord, map[string]cacheRecord) (bool, error) {
+				return false, nil
+			}); err != nil {
+				return fmt.Errorf("cache_unavailable: %w", err)
+			}
+			path := filepath.Join(dir, "cache.json")
+			if flagJSON {
+				return PrintJSON(map[string]string{"path": path})
+			}
+			fmt.Fprintln(cmd.OutOrStdout(), "Cache available at", path)
+			return nil
+		},
+	})
+	return cmd
+}
+
+func checkTaskCache() (string, error) {
+	dir, err := taskCacheDir()
+	if err == nil {
+		err = probeCacheDirectory(dir)
+	}
+	if err != nil {
+		return "", fmt.Errorf("cache_unavailable: %w", err)
+	}
+	return dir, nil
+}
+
+func probeCacheDirectory(dir string) error {
+	if err := ensureCacheDirectory(dir); err != nil {
+		return err
+	}
+	for _, name := range []string{"cache.json", "cache.lock"} {
+		info, err := os.Lstat(filepath.Join(dir, name))
+		if err == nil && !info.Mode().IsRegular() {
+			return fmt.Errorf("%s must be a regular file", name)
+		}
+		if err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+	}
+	// The cache uses an atomic replacement, which requires writes to the directory.
+	tmp, err := os.CreateTemp(dir, ".cache-check-*")
+	if err != nil {
+		return err
+	}
+	closeErr := tmp.Close()
+	return errors.Join(closeErr, os.Remove(tmp.Name()))
+}
+
+func ensureCacheDirectory(dir string) error {
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	info, err := os.Lstat(dir)
+	if err != nil {
+		return err
+	}
+	if !info.IsDir() {
+		return errors.New("expected a cache directory")
+	}
+	if dir == filepath.Join(configDirectory(), "cache") && info.Mode().Perm() != 0o700 {
+		return os.Chmod(dir, 0o700)
+	}
+	// Do not change the permissions of a caller-supplied directory.
+	if info.Mode().Perm()&0o022 != 0 {
+		return errors.New("cache directory must not be writable by other users")
+	}
+	return nil
 }
 
 func mergeCachedTasks(ctx context.Context, dir string, records []api.V2Task) error {
@@ -54,7 +148,7 @@ func mergeCachedTasks(ctx context.Context, dir string, records []api.V2Task) err
 		for _, task := range records {
 			raw := task.OriginalJSON()
 			if task.ID == "" || len(raw) == 0 {
-				return false, errors.New("task response is missing an ID or original data")
+				return false, errInvalidTaskResponse
 			}
 			if _, exists := entries[task.ID]; exists && commentTaskRevision(tasks[task.ID].Payload) != commentTaskRevision(raw) {
 				invalidateCommentEntry(entries, task.ID)
@@ -98,32 +192,28 @@ func cacheEntries(cache map[string]json.RawMessage, key string) (map[string]cach
 }
 
 func updateTaskCache(ctx context.Context, dir string, update func(tasks, comments map[string]cacheRecord) (bool, error)) error {
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	if err := ensureCacheDirectory(dir); err != nil {
 		return err
-	}
-	info, err := os.Lstat(dir)
-	if err != nil {
-		return err
-	}
-	if !info.IsDir() {
-		return errors.New("expected a cache directory")
-	}
-	if info.Mode().Perm() != 0o700 {
-		if err := os.Chmod(dir, 0o700); err != nil {
-			return err
-		}
 	}
 
 	// Lock a separate file so the lock survives replacement of cache.json.
-	lock := flock.New(filepath.Join(dir, "cache.lock"))
-	locked, err := lock.TryLockContext(ctx, 50*time.Millisecond)
+	lockPath := filepath.Join(dir, "cache.lock")
+	if info, err := os.Lstat(lockPath); err == nil && !info.Mode().IsRegular() {
+		return errors.New("cache.lock must be a regular file")
+	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	lock := flock.New(lockPath)
+	defer lock.Close()
+	lockContext, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	locked, err := lock.TryLockContext(lockContext, 50*time.Millisecond)
 	if err != nil {
 		return err
 	}
 	if !locked {
 		return errors.New("could not lock the TickTick cache")
 	}
-	defer lock.Close()
 
 	path := filepath.Join(dir, "cache.json")
 	cache, err := readTaskCache(path)

@@ -16,6 +16,8 @@ description: Работай с задачами, списками, коммен�
 - Для создания используй `task create --project "$PROJECT_ID" --title "$TITLE"`. Для правок используй `task update "$TASK_ID" --project "$PROJECT_ID"` с нужными флагами. Для завершения используй `task complete "$TASK_ID" --project "$PROJECT_ID"`, для пачки до 50 задач есть `task complete-many --ids "$IDS" --project "$PROJECT_ID"`.
 - Для добавления комментария используй `task comment-add "$TASK_ID" --project "$PROJECT_ID" --text "$COMMENT"`. Для просмотра фокуса и привычек доступны `focus list`, `habit list` и `habit checkins`. Синтаксис диапазонов смотри в `--help` конкретной команды.
 
+Для JSON задач используй `status_slug`: `abandoned` (−1), `open` (0), `completed` (2). Значение `1` означает `completed_subtask` внутри `items[]`; у самой задачи оно остаётся `unknown`. Исходный `status` доступен для диагностики. Эти значения относятся к задачам и элементам чек-листа.
+
 ## Активные и завершённые задачи
 
 ```bash

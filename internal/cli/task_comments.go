@@ -242,10 +242,13 @@ client-side with 1-8 workers. Metadata about failures goes to stderr.`,
 					fmt.Fprintf(os.Stderr, "task %s: %v\n", ref.TaskID, e)
 				}
 			}
+			if cacheErr != nil {
+				fmt.Fprintf(os.Stderr, "comments_cache_failed: %v\n", cacheErr)
+			}
 			return fmt.Errorf("%d of %d tasks failed", len(failures), len(refs))
 		}
 		if cacheErr != nil {
-			return fmt.Errorf("update comments cache: %w", cacheErr)
+			return fmt.Errorf("comments_cache_failed: %w", cacheErr)
 		}
 		return nil
 	},

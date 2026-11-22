@@ -408,7 +408,7 @@ func taskBulkAssignRun(cmd *cobra.Command, args []string) error {
 	if err := CheckHTTP(resp.StatusCode(), resp.Body); err != nil {
 		return err
 	}
-	return Render(resp.Body, func(w io.Writer) {
+	return renderTasks(resp.Body, func(w io.Writer) {
 		fmt.Fprintf(w, "Assigned %s to %s\n", taskID, username)
 
 		var t api.Task
@@ -455,7 +455,7 @@ func taskBulkUnassignRun(cmd *cobra.Command, args []string) error {
 	if err := CheckHTTP(resp.StatusCode(), resp.Body); err != nil {
 		return err
 	}
-	return Render(resp.Body, func(w io.Writer) {
+	return renderTasks(resp.Body, func(w io.Writer) {
 		fmt.Fprintf(w, "Unassigned %s\n", taskID)
 	})
 }

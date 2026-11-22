@@ -172,6 +172,8 @@ func TestTaskCrudGetJSON(t *testing.T) {
 	taskCrudWantContains(t, out,
 		`"id": "63b7bebb91c0a5474805fcd4"`,
 		`"title": "Task Title"`,
+		`"status_slug": "open"`,
+		`"status_slug": "completed_subtask"`,
 		`"tags": [`,
 		`"priority": 1`,
 	)

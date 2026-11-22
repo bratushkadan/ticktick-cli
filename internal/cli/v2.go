@@ -4,6 +4,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -26,32 +27,44 @@ type v2Output struct {
 	key []byte
 }
 
-func newV2CLIClient() (*api.V2Client, v2Output, error) {
+func resolveV2Cookie(envFile string) (string, error) {
 	cookie := strings.TrimSpace(os.Getenv(v2CookieKey))
 	if cookie == "" {
-		path := strings.TrimSpace(flagEnvFile)
+		path := strings.TrimSpace(envFile)
 		explicit := path != ""
 		if !explicit {
 			home, err := os.UserHomeDir()
 			if err != nil {
-				return nil, v2Output{}, err
+				return "", err
 			}
 			path = filepath.Join(home, ".env")
 		}
 		data, err := os.ReadFile(path)
 		if err != nil && !(errors.Is(err, os.ErrNotExist) && !explicit) {
-			return nil, v2Output{}, fmt.Errorf("read TickTick v2 env file: %w", err)
+			return "", fmt.Errorf("read TickTick v2 env file: %w", err)
 		}
 		values, err := readDotenvSettings(path, data, v2CookieKey)
 		if err != nil {
-			return nil, v2Output{}, err
+			return "", err
 		}
 		cookie = values[v2CookieKey]
 	}
 	if cookie == "" {
-		return nil, v2Output{}, errors.New("set TICKTICK_V2_API_COOKIE in the environment, ~/.env, or --env-file")
+		return "", errors.New("set TICKTICK_V2_API_COOKIE in the environment, ~/.env, or --env-file")
 	}
-	client, err := api.NewV2Client(api.V2Origin, cookie, &http.Client{
+	return cookie, nil
+}
+
+func newV2CLIClient() (*api.V2Client, v2Output, error) {
+	return newV2CLIClientAt(api.V2Origin)
+}
+
+func newV2CLIClientAt(origin string) (*api.V2Client, v2Output, error) {
+	cookie, err := resolveV2Cookie(flagEnvFile)
+	if err != nil {
+		return nil, v2Output{}, err
+	}
+	client, err := api.NewV2Client(origin, cookie, &http.Client{
 		Timeout: flagTimeout, Transport: apiTransport,
 	})
 	return client, v2Output{key: []byte(strings.TrimPrefix(cookie, "t="))}, err
@@ -71,6 +84,7 @@ func (o v2Output) tasks(tasks []api.V2Task) []api.V2Task {
 	out := make([]api.V2Task, 0, len(tasks))
 	for _, t := range tasks {
 		t.ID, t.ProjectID = o.id(t.ID), o.id(t.ProjectID)
+		t.StatusSlug = taskStatusSlug(t.Status, false)
 		t.DueDate = v2SafeTime(t.DueDate, time.RFC3339)
 		t.CompletedTime = v2SafeTime(t.CompletedTime, time.RFC3339)
 		switch t.Kind {
@@ -100,14 +114,45 @@ func (o v2Output) cachedTasks(tasks []api.V2Task, cacheIDs bool) []api.V2Task {
 
 func addCacheIDsFlag(cmd *cobra.Command) {
 	cmd.Flags().Bool("cache-ids", false, "with --json, retain original task IDs for local cache lookup")
+	cmd.Flags().String("snapshot-file", "", "with --cache-ids, write original task records to a new private file")
 }
 
 func cacheIDsRequested(cmd *cobra.Command) (bool, error) {
 	cacheIDs, _ := cmd.Flags().GetBool("cache-ids")
+	if cmd.Flags().Changed("snapshot-file") {
+		path, _ := cmd.Flags().GetString("snapshot-file")
+		if !cacheIDs || path == "" {
+			return false, errors.New("--snapshot-file requires a path and --cache-ids")
+		}
+	}
 	if cacheIDs && !flagJSON {
 		return false, errors.New("--cache-ids requires --json")
 	}
 	return cacheIDs, nil
+}
+
+func cacheTaskPage(cmd *cobra.Command, records []api.V2Task) error {
+	if err := cacheWebTasks(cmd.Context(), records); err != nil {
+		return err
+	}
+	path, _ := cmd.Flags().GetString("snapshot-file")
+	if path == "" {
+		return nil
+	}
+	data := make([]json.RawMessage, 0, len(records))
+	for _, task := range records {
+		data = append(data, task.OriginalJSON())
+	}
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return fmt.Errorf("snapshot_write_failed: %w", err)
+	}
+	writeErr := json.NewEncoder(file).Encode(data)
+	if err := errors.Join(writeErr, file.Close()); err != nil {
+		_ = os.Remove(path)
+		return fmt.Errorf("snapshot_write_failed: %w", err)
+	}
+	return nil
 }
 
 func (o v2Output) durations(values map[string]int64) map[string]int64 {
@@ -283,6 +328,9 @@ func newV2CompletedCmd() *cobra.Command {
 				}
 				opts.From = &start
 			}
+			if _, err := checkTaskCache(); err != nil {
+				return err
+			}
 			c, output, err := newV2CLIClient()
 			if err != nil {
 				return err
@@ -299,7 +347,7 @@ func newV2CompletedCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if err := cacheWebTasks(cmd.Context(), records); err != nil {
+			if err := cacheTaskPage(cmd, records); err != nil {
 				return err
 			}
 			result := struct {
@@ -510,16 +558,9 @@ func newV2HabitCheckinsCmd() *cobra.Command {
 		Short: "Query habit check-ins through the TickTick web API",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			opts := api.V2HabitCheckinOptions{HabitIDs: taskQuerySplitCSV(strings.Join(ids, ","))}
-			if len(opts.HabitIDs) == 0 {
-				return errors.New("--ids requires at least one habit ID")
-			}
-			if after != "" {
-				day, err := v2ParseDay(after)
-				if err != nil {
-					return fmt.Errorf("--after: %w", err)
-				}
-				opts.AfterStamp = Ptr(int32(day.Year()*10000 + int(day.Month())*100 + day.Day()))
+			opts, err := v2ParseHabitQuery(ids, after)
+			if err != nil {
+				return err
 			}
 			c, output, err := newV2CLIClient()
 			if err != nil {
@@ -572,6 +613,7 @@ func newV2Cmd() *cobra.Command {
 		Long:  "Read the TickTick web API. Text and JSON output use pseudonyms for IDs and tags.",
 	}
 	cmd.AddCommand(newV2SearchCmd(), newV2CompletedCmd(), newV2FocusCmd(), newV2HabitCheckinsCmd())
+	cmd.AddCommand(newV2HabitsCmd(), newV2HabitRecordsCmd(), newV2HabitSectionsCmd())
 	return cmd
 }
 

@@ -46,6 +46,7 @@ func runCmd(t *testing.T, args ...string) error {
 	flagToken = ""
 	flagEnvFile = ""
 	flagBaseURL = ""
+	flagCacheDir = ""
 	flagTimeout = 30 * time.Second
 	rootCmd.SetArgs(args)
 	err := rootCmd.Execute()
