@@ -55,7 +55,7 @@ class DigestTest(unittest.TestCase):
         ranges = {"day": (*day, []), "week": (*week, [DEFAULT_PROJECT])}
         start = datetime(2026, 11, 22, 9, tzinfo=ZONE)
         end = datetime(2026, 11, 22, 10, tzinfo=ZONE)
-        session = (start, end, 1.0, [({"taskId": "closed", "projectId": DEFAULT_PROJECT}, start, end)])
+        session = (start, end, 3600, [({"taskId": "closed", "projectId": DEFAULT_PROJECT}, start, end)])
         with patch("collect.load_focus", return_value=([session], True, [])) as load:
             output = digest(client, ranges, now, ZONE, 8, None, True, "1.1.0", "default")
         load.assert_called_once_with(client, week[0], now)
@@ -102,7 +102,7 @@ class HabitsTest(unittest.TestCase):
         report = {"from": "2026-11-02", "through": "2026-11-20", "today_included": True, "habits": [raw]}
         start = datetime(2026, 11, 4, 12, tzinfo=timezone.utc)
         end = datetime(2026, 11, 4, 13, tzinfo=timezone.utc)
-        session = (start, end, 1.0, [({"habitId": "habit"}, start, end)])
+        session = (start, end, 3600, [({"habitId": "habit"}, start, end)])
         enrich_habits(report, ([session], True, []), ZONE)
         stats = raw["stats"]
         self.assertEqual((stats["scheduled"], stats["achieved"], stats["partial"]), (5, 1, 1))

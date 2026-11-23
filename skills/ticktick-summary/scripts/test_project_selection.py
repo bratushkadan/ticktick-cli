@@ -47,7 +47,7 @@ class ProjectSelectionTest(unittest.TestCase):
         now = datetime(2026, 11, 22, 13, tzinfo=ZONE)
         start = now.replace(hour=10)
         end = now.replace(hour=11)
-        session = (start, end, 1, [({"projectId": "external"}, start, end)])
+        session = (start, end, 3600, [({"projectId": "external"}, start, end)])
         client = Snapshot()
         client.sources = {}
         ranges = {"day": (*period("day", now.date(), ZONE), []),

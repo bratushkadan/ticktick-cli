@@ -76,11 +76,13 @@ def read_sessions(client, start, end, stamp, warnings):
                             left, right = left or begins, right or ends
                         else:
                             continue
-                    links.append((segment, max(begins, left), min(ends, right)))
+                    left, right = max(begins, left), min(ends, right)
+                    if left < right:
+                        links.append((segment, left, right))
             except (ValueError, TypeError, OverflowError, AttributeError):
                 invalid += 1
                 continue
-            sessions.append((begins, ends, duration / elapsed, links))
+            sessions.append((begins, ends, duration, links))
     if invalid:
         warnings.append({
             "code": "focus_invalid_records", "missing": invalid,
@@ -94,20 +96,34 @@ def overlap_seconds(begins, ends, start, end):
 
 
 def allocations(sessions, start, end):
-    for begins, ends, rate, links in sessions:
-        start_of_session, end_of_session = max(begins, start), min(ends, end)
-        if end_of_session <= start_of_session or not rate:
+    for begins, ends, duration, links in sessions:
+        if not duration or ends <= start or begins >= end:
             continue
-        clipped = [(link, max(left, start_of_session), min(right, end_of_session))
-                   for link, left, right in links if overlap_seconds(left, right, start, end)]
-        boundaries = sorted({start_of_session, end_of_session}
-                            | {point for _, left, right in clipped for point in (left, right)})
+
+        # Measure coverage across the whole session before clipping to a report day.
+        boundaries = sorted({begins, ends} | {t for _, left, right in links for t in (left, right)})
+        spans = []
+        covered = 0
         for left, right in zip(boundaries, boundaries[1:]):
-            active = [link for link, starts, stops in clipped if starts <= left and right <= stops]
-            active = active or [{}]
-            seconds = (right - left).total_seconds() * rate / len(active)
-            for link in active:
-                yield link, seconds
+            active = [link for link, first, last in links if first <= left and right <= last]
+            spans.append((left, right, active))
+            if active:
+                covered += (right - left).total_seconds()
+
+        elapsed = (ends - begins).total_seconds()
+        gaps = elapsed - covered
+        # Prefer explicit active intervals. Only focus left over can belong to gaps.
+        # An upward duration adjustment beyond wall time scales the entire session.
+        if duration > elapsed:
+            linked_rate = gap_rate = duration / elapsed
+        else:
+            linked_rate = min(duration, covered) / covered if covered else 0
+            gap_rate = max(0, duration - covered) / gaps if gaps else 0
+        for left, right, active in spans:
+            seconds = overlap_seconds(left, right, start, end) * (linked_rate if active else gap_rate)
+            if seconds:
+                for link in active or [{}]:
+                    yield link, seconds / max(1, len(active))
 
 
 def summarize(sessions, start, end, names, candidates, aliases, scope):
